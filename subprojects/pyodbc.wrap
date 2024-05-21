@@ -1,0 +1,8 @@
+[wrap-git]
+directory = pyodbc
+url = https://github.com/mkleehammer/pyodbc.git
+revision = 5.1.0
+depth = 1
+
+[provide]
+pyodbc = pyodbc_dep
