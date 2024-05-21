@@ -1,0 +1,47 @@
+[build-system]
+build-backend = "mesonpy"
+requires = ["meson-python", "numpy <2"]
+
+[project]
+authors = [{name = "Quansight", email = "connect@quansight.com"}]
+classifiers = []
+dependencies = []
+description = "pyodbc extended to use NumPy"
+keywords = []
+license = {file = "LICENSE"}
+maintainers = []
+name = "npyodbc"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">3.9,<3.12"
+version = "0.1.0"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+    "flake8-pyproject",
+    "ipdb",
+    "isort",
+    "mdformat",
+    "mdformat-myst",
+    "pre-commit",
+]
+test = ["pytest", "pytest-cov"]
+
+[project.urls]
+"Source" = "https://github.com/Quansight/pyodbc-numpy"
+
+[tool.flake8]
+extend-ignore = [
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
+  "D107", # Missing docstring in __init__
+  "E203", # Whitespace before ':'
+]
+max-line-length = 88
+per-file-ignores = """
+  __init__.py: F401
+"""
+
+[tool.isort]
+profile = "black"
