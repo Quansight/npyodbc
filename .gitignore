@@ -1,0 +1,13 @@
+# Meson
+subprojects/*
+!subprojects/*.wrap
+
+# Python
+__pycache__/
+.ipynb_checkpoints/
+
+# C++
+compile_commands.json
+
+# Tests
+.coverage
