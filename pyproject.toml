@@ -21,9 +21,11 @@ dev = [
     "flake8",
     "flake8-pyproject",
     "ipdb",
+    "ipython",
     "isort",
     "mdformat",
     "mdformat-myst",
+    "meson-python",
     "pre-commit",
 ]
 test = ["pytest", "pytest-cov"]
