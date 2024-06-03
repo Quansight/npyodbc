@@ -2,6 +2,7 @@
 #include <sql.h>
 #include <sqlext.h>
 
+#include "connection.h"
 #include "npcontainer.h"
 #include "pyodbcmodule.h"
 
@@ -29,8 +30,12 @@ static struct PyModuleDef moduledef = {
 
 PyMODINIT_FUNC PyInit_npyodbc(void) {
     PyObject *module = PyModule_Create(&moduledef);
+
+    PyModule_AddObject(module, "Connection", (PyObject *)&ConnectionType);
+
     if (!module) {
         return NULL;
     }
+
     return module;
 }
