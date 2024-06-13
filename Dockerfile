@@ -23,4 +23,4 @@ RUN sudo chown -R $USER:$USER $HOME/$DIR
 RUN python3 -m venv $HOME/venv
 ENV PATH=$HOME/venv/bin:$PATH
 RUN pip install --upgrade pip
-    # && pip install .[dev,test]
+    && pip install .[dev,test]

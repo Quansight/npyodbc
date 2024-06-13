@@ -3,6 +3,9 @@ subprojects/*
 !subprojects/*.wrap
 !subprojects/packagefiles
 build/
+subprojects/packagefiles/patches/*.h
+subprojects/packagefiles/patches/*.cpp
+subprojects/packagefiles/patches/*.toml
 
 # Python
 __pycache__/
