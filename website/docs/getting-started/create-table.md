@@ -4,10 +4,10 @@ sidebar_position: 2
 
 # Creating a table
 
-Creating a table using `npyodbc`.
+Creating a table using npyodbc.
 
 We will assume you have the `iPython` REPL installed. If not, install it using the
-`.[dev,test]` command line flags if installing `npyodbc` from a locally cloned git repo,
+`.[dev,test]` command line flags if installing npyodbc from a locally cloned git repo,
 or your favorite method for doing so.
 
 ```python showLineNumbers

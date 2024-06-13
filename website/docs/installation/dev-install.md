@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Development installation
 
-Development installation of `npyodbc`.
+Development installation of npyodbc.
 
 Below includes Microsoft SQL Server 2022 if you follow the VSCode or Docker install. The
 password for the server can be found in the Dockerfile and is `StrongPassword2022!`,
@@ -20,7 +20,7 @@ Choose to open the repo in the supplied `devcontainer` if you use VSCode. Within
 Run the following commands using docker to install the project into a container. This is
 similar to the `devcontainer` in VSCode above.
 
-```bash
+```bash showLineNumbers
 # Build the image
 docker build . --tag npyodbc
 # Start a container
@@ -37,7 +37,7 @@ code in `$HOME/mssql/npyodbc`.
 Local development using `conda` or `mamba` can be done with the following commands. If
 you are using `mamba`, replace `conda` with `mamba`.
 
-```bash
+```bash showLineNumbers
 conda env create --file environment.yaml
 conda activate npyodbc-dev
 pip install .[dev,test]
@@ -49,5 +49,5 @@ you choose to install via the `conda/mamba` route, then you will still need to u
 Dockerfile to install Microsoft SQL 2022. That way you can develop locally and still
 have a working version of SQL 2022 to test with.
 
-If you are going to do development on `npyodbc`, then ensure you install the `dev` and
+If you are going to do development on npyodbc, then ensure you install the `dev` and
 `test` extras as indicated above.

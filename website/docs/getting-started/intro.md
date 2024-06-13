@@ -4,25 +4,25 @@ sidebar_position: 1
 
 # Intro
 
-Introduction to `npyodbc`.
+Introduction to npyodbc.
 
-`npyodbc` was developed using [pyodbc](https://github.com/mkleehammer/pyodbc) and
-extended using [NumPy](https://numpy.org). We use `pyodbc` as a subproject within the
-`npyodbc` project, and leverage [meson](https://mesonbuild.com) as the build system.
-With the help of `meson` we can use the latest release of `pyodbc` and extend it to
+npyodbc was developed using [pyodbc](https://github.com/mkleehammer/pyodbc) and
+extended using [NumPy](https://numpy.org). We use pyodbc as a subproject within the
+npyodbc project, and leverage [meson](https://mesonbuild.com) as the build system.
+With the help of meson we can use the latest release of pyodbc and extend it to
 include returning result sets from an ODBC compliant SQL server as NumPy arrays.
 
-Documentation for `pyodbc` can be found on their
+Documentation for pyodbc can be found on their
 [wiki](https://github.com/mkleehammer/pyodbc/wiki). We will only include components of
-that wiki that directly relate to how to use `npyodbc`. Advanced usage of `pyodbc`
-features will be linked directly to the `pyodbc` wiki.
+that wiki that directly relate to how to use npyodbc. Advanced usage of pyodbc
+features will be linked directly to the pyodbc wiki.
 
 All example code will assume you have Microsoft SQL 2022 running locally in a Docker
 container. The [dev installation documentation](installation/dev-install.md) discusses
 how to do this, but we will outline it below for an installation **not** using the
 VSCode devcontainer.
 
-Install the `npyodbc` Docker container by navigating to the repo where the `Dockerfile`
+Install the npyodbc Docker container by navigating to the repo where the `Dockerfile`
 exists and executing the following command in your terminal.
 
 ```bash showLineNumbers
@@ -48,7 +48,7 @@ cd /opt/mssql-tools/bin
 ./sqlcmd -U SA -P StrongPassword2022! -S localhost
 ```
 
-You can now add a test table manually here that you can access using `npyodbc`.
+You can now add a test table manually here that you can access using npyodbc.
 
 ```sql showLineNumbers
 DROP TABLE test;
