@@ -40,7 +40,7 @@ you are using `mamba`, replace `conda` with `mamba`.
 ```bash
 conda env create --file environment.yaml
 conda activate npyodbc-dev
-pip install .
+pip install .[dev,test]
 ```
 
 Note that editable installs are not available since the codebase is primarily written in
@@ -48,3 +48,6 @@ C++, and needs to be compiled in order for Python to have access to the extensio
 you choose to install via the `conda/mamba` route, then you will still need to use the
 Dockerfile to install Microsoft SQL 2022. That way you can develop locally and still
 have a working version of SQL 2022 to test with.
+
+If you are going to do development on `npyodbc`, then ensure you install the `dev` and
+`test` extras as indicated above.
