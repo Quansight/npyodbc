@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "mesonpy"
-requires = ["meson-python", "numpy <2"]
+requires = ["meson-python", "numpy <2", "setuptools_scm"]
 
 [project]
 authors = [{name = "Quansight", email = "connect@quansight.com"}]
