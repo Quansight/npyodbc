@@ -4,8 +4,6 @@ project(
   version: run_command(['python', '-m', 'setuptools_scm'], check: true).stdout().strip(),
 )
 
-add_project_arguments('-DPYODBC_VERSION=' + meson.project_version(), language: 'c')
-
 python = import('python').find_installation(pure: false)
 python_dep = python.dependency()
 
@@ -60,6 +58,8 @@ python.install_sources(
   ],
   subdir: 'npyodbc',
 )
+
+add_project_arguments('-DPYODBC_VERSION=' + meson.project_version(), language: 'cpp')
 
 # Build the npyodbc module
 python.extension_module(
