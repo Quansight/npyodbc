@@ -8,8 +8,6 @@ compiler = meson.get_compiler('cpp')
 # ODBC driver needs to be installed by the OS.
 odbc_dependency = compiler.find_library('odbc')
 
-version = get_option('version')
-
 pyodbc_sources = [
   'src/cnxninfo.cpp',
   'src/connection.cpp',
