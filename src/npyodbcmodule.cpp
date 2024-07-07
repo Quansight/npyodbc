@@ -15,14 +15,15 @@ extern "C" {
     PyMODINIT_FUNC PyInit_pyodbc();
 }
 
-PyMODINIT_FUNC PyInit__npyodbc(void) {
+PyMODINIT_FUNC PyInit_npyodbc(void) {
     // Initialize the pyodbc module, and just return that. Adding additional methods
     // to the module can be done here.
-    PyObject *module = PyInit_pyodbc();
-    if (module == NULL) {
+    // PyObject *module = PyInit_pyodbc();
+    PyInit_pyodbc();
+    if (pModule == NULL) {
         PyErr_SetString(PyExc_ImportError, "Error initializing pyodbc.");
         return NULL;
     }
 
-    return module;
+    return pModule;
 }
