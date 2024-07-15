@@ -36,3 +36,5 @@ db.sqlite
 # gdb
 .gdbinit
 .gdb_history
+
+.hypothesis/

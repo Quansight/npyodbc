@@ -91,7 +91,7 @@ dev = [
     "pre-commit",
     "meson-python"
 ]
-test = ["pytest", "pytest-cov"]
+test = ["pytest", "hypothesis"]
 
 [tool.setuptools_scm]
 
