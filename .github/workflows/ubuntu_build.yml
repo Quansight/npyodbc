@@ -190,7 +190,7 @@ jobs:
 
     - name: Run SQL Server 2017 tests
       env:
-        PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1401;UID=sa;PWD=StrongPassword2017;DATABASE=test"
+        PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1401;UID=sa;PWD=StrongPassword2017;DATABASE=test;Encrypt=Optional"
       run: |
         pytest -vv "./tests/sqlserver_test.py"
 
