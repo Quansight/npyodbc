@@ -107,11 +107,11 @@ Now your system is ready to connect.
 
 ```bash
 # Set your environment to match the settings in the container
-PGHOST=localhost
-PGPORT=5432
-PGDATABASE=postgres_db
-PGUSER=postgres_user
-PGPASSWORD=postgres_pwd
+export PGHOST=localhost
+export PGPORT=5432
+export PGDATABASE=postgres_db
+export PGUSER=postgres_user
+export PGPASSWORD=postgres_pwd
 
 # Create a new database
 psql -c "CREATE DATABASE test WITH encoding='UTF8' LC_COLLATE='en_US.utf8' LC_CTYPE='en_US.utf8'"
