@@ -138,6 +138,7 @@ jobs:
       run: |
         echo "*** get version"
         psql -c "SELECT version()"
+        psql -c "\l"
         echo "*** create database"
         psql -c "CREATE DATABASE test WITH encoding='UTF8' LC_COLLATE='en_US.utf8' LC_CTYPE='en_US.utf8'"
         echo "*** list databases"
