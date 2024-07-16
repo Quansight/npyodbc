@@ -146,7 +146,7 @@ jobs:
       env:
         PGHOST: localhost
         PGPORT: 5432
-        PGDATABASE: test
+        PGDATABASE: postgres
         PGUSER: postgres_user
         PGPASSWORD: postgres_pwd
 
