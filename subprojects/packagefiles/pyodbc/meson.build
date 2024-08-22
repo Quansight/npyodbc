@@ -21,7 +21,10 @@ pyodbc_sources = [
   'src/row.cpp',
   'src/textenc.cpp',
 ]
-pyodbc_inc = include_directories('src')
+pyodbc_inc = include_directories(
+  'src',
+  is_system: true
+)
 
 pyodbc_dep = declare_dependency(
   include_directories: pyodbc_inc,

@@ -5,22 +5,31 @@
 // Copyright: Continuum Analytics 2012-2014
 //
 
+#include <cstdlib>
+#include <unicode/unistr.h>
+#include <unicode/ucnv.h>
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
-#include <stdio.h>
 #include <Python.h>
 #include <sqltypes.h>
-#include <vector>
+#include <stdio.h>
 
+#include <vector>
 
 #include "numpy/arrayobject.h"
 #include "numpy/npy_math.h"
+
+// clang-format off
+// Keep ordering of these - the pyodbc headers
+// do not correctly specify includes inside themselves,
+// and there will be undefined objects if the order is changed.
 #include "pyodbc.h"
 #include "connection.h"
 #include "cursor.h"
 #include "dbspecific.h"
 #include "errors.h"
 #include "pyodbcmodule.h"
+// clang-format on
 
 // exported variables ----------------------------------------------------------
 
@@ -32,7 +41,9 @@ Py_ssize_t iopro_text_limit = -1;
 
 bool pyodbc_tracing_enabled = false;
 
-void pyodbc_trace_func(const char *file, int line, const char *fmt, ...) {
+void
+pyodbc_trace_func(const char *file, int line, const char *fmt, ...)
+{
     va_list args;
     va_start(args, fmt);
 
@@ -51,10 +62,13 @@ void pyodbc_trace_func(const char *file, int line, const char *fmt, ...) {
 #define GUARDED_DEALLOC(...) free(__VA_ARGS__)
 
 #define CHECK_ALLOC_GUARDS(...) \
-    {}
+    {                           \
+    }
 
 namespace {
-inline size_t limit_text_size(size_t sz) {
+inline size_t
+limit_text_size(size_t sz)
+{
     if (iopro_text_limit < 0) {
         return sz;
     }
@@ -65,12 +79,12 @@ inline size_t limit_text_size(size_t sz) {
 
 /* a RAII class for Python GIL */
 class PyNoGIL {
-    public:
-        PyNoGIL() { Py_UNBLOCK_THREADS }
-        ~PyNoGIL() { Py_BLOCK_THREADS }
+   public:
+    PyNoGIL() { Py_UNBLOCK_THREADS }
+    ~PyNoGIL() { Py_BLOCK_THREADS }
 
-    private:
-        PyThreadState *_save;
+   private:
+    PyThreadState *_save;
 };
 
 }  // namespace
@@ -83,7 +97,9 @@ static size_t DEFAULT_ROWS_TO_BE_ALLOCATED = DEFAULT_ROWS_TO_BE_FETCHED;
 // the module init function if running on Numpy >= API version 7.
 static bool CAN_USE_DATETIME = false;
 
-const char *sql_type_to_str(SQLSMALLINT type) {
+const char *
+sql_type_to_str(SQLSMALLINT type)
+{
 #define TYPENAME(x, y) \
     case x:            \
         return y;
@@ -121,7 +137,9 @@ const char *sql_type_to_str(SQLSMALLINT type) {
 #undef TYPENAME
 }
 
-const char *sql_c_type_to_str(SQLSMALLINT type) {
+const char *
+sql_c_type_to_str(SQLSMALLINT type)
+{
 #define TYPENAME(x, y) \
     case x:            \
         return y;
@@ -151,15 +169,15 @@ const char *sql_c_type_to_str(SQLSMALLINT type) {
 using namespace std;
 
 // Days per month, regular year and leap year
-int _days_per_month_table[2][12] = {
-        {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
-        {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
-};
+int _days_per_month_table[2][12] = {{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
+                                    {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}};
 
 //
 // Returns 1 if the given year is a leap year, 0 otherwise.
 //
-int is_leapyear(SQLSMALLINT year) {
+int
+is_leapyear(SQLSMALLINT year)
+{
     return (year & 0x3) == 0 && /* year % 4 == 0 */
            ((year % 100) != 0 || (year % 400) == 0);
 }
@@ -169,7 +187,9 @@ int is_leapyear(SQLSMALLINT year) {
 //
 // Code strongly based on its NumPy counterpart.
 //
-npy_int64 get_datestruct_days(const DATE_STRUCT *dts) {
+npy_int64
+get_datestruct_days(const DATE_STRUCT *dts)
+{
     int i, month;
     npy_int64 year = 0;
     npy_int64 days = 0;
@@ -195,7 +215,8 @@ npy_int64 get_datestruct_days(const DATE_STRUCT *dts) {
         year += 300;
         /* Add one day for each 400 years */
         days += year / 400;
-    } else {
+    }
+    else {
         /*
          * 1972 is the closest later year after 1970.
          * Include the current year, so subtract 2.
@@ -236,13 +257,14 @@ npy_int64 get_datestruct_days(const DATE_STRUCT *dts) {
 // This code is heavily based on NumPy 1.7 equivalent function.
 // Only conversion to microseconds is supported here.
 //
-npy_datetime convert_datetimestruct_to_datetime(const TIMESTAMP_STRUCT *dts) {
+npy_datetime
+convert_datetimestruct_to_datetime(const TIMESTAMP_STRUCT *dts)
+{
     npy_datetime ret;
 
     // Calculate the number of days to start
     npy_int64 days = get_datestruct_days((DATE_STRUCT *)dts);
-    ret = (((days * 24 + dts->hour) * 60 + dts->minute) * 60 + dts->second) *
-                  1'000'000 +
+    ret = (((days * 24 + dts->hour) * 60 + dts->minute) * 60 + dts->second) * 1'000'000 +
           dts->fraction / 1'000;  // fraction is in ns (billionths of a second)
 
     return ret;
@@ -252,7 +274,9 @@ npy_datetime convert_datetimestruct_to_datetime(const TIMESTAMP_STRUCT *dts) {
 // Convert a date from a datestruct to a datetime64 based
 // on some metadata. The date is assumed to be valid.
 //
-npy_datetime convert_datestruct_to_datetime(const DATE_STRUCT *dts) {
+npy_datetime
+convert_datestruct_to_datetime(const DATE_STRUCT *dts)
+{
     // Calculate the number of days to start
     npy_datetime days = get_datestruct_days(dts);
 
@@ -263,86 +287,12 @@ npy_datetime convert_datestruct_to_datetime(const DATE_STRUCT *dts) {
 // Convert a time from a timestruct to a timedelta64 based
 // on some metadata. The time is assumed to be valid.
 //
-npy_timedelta convert_timestruct_to_timedelta(const TIME_STRUCT *dts) {
+npy_timedelta
+convert_timestruct_to_timedelta(const TIME_STRUCT *dts)
+{
     npy_timedelta seconds = (((dts->hour * 60) + dts->minute) * 60) + dts->second;
 
     return seconds;
-}
-
-/*
- * This is a debug helper function that allows dumping a memory buffer
- * to a string for use within TRACE calls. It reuses an internal static
- * buffer so it won't be thread safe and it will reuse the same memory
- * in different calls, but it will be enough for debugging.
- * Note: the string is valid until the next call of this function, as
- *       the buffer will be reused
- */
-static const char *raw_buffer_as_print_string(const void *ptr, size_t len) {
-    static char _work_buffer[72];
-    static char *hex_digit = "0123456789abcdef";
-    const size_t max_bytes_to_dump =
-            (sizeof(_work_buffer) / sizeof(_work_buffer[0])) / 3;
-    size_t pre = len < max_bytes_to_dump ? len : max_bytes_to_dump - 4;
-    size_t post = len < max_bytes_to_dump ? 0 : max_bytes_to_dump - pre - 1;
-    char *out = _work_buffer;
-    const unsigned char *in = reinterpret_cast<const unsigned char *>(ptr);
-    if (len == 0) {
-        return "";
-    }
-
-    for (size_t i = 0; i < pre; i++) {
-        unsigned char c = in[i];
-        *out++ = hex_digit[(c >> 4) & 0xf];
-        *out++ = hex_digit[c & 0xf];
-        *out++ = ' ';
-    }
-
-    if (post) {
-        *out++ = '.';
-        *out++ = '.';
-        *out++ = ' ';
-        in += len - post;
-        for (size_t i = 0; i < post; i++) {
-            unsigned char c = in[i];
-            *out++ = hex_digit[(c >> 4) & 0xf];
-            *out++ = hex_digit[c & 0xf];
-            *out++ = ' ';
-        }
-    }
-
-    out[-1] = '\0';  // overwrite last space
-    return _work_buffer;
-}
-
-/*
- * Convert the SQLWCHAR array to ucs4.
- * At most count elements will be present.
- *
- * src is assumed to be in utf16 encoding. If the driver manager uses
- * utf32 (ucs4) this will not be called.
- *
- * NOTE: In our context the number of characters is known and comes from
- *       the database schema.
- */
-static void convert_ucs4_from_utf16(void *dst, const void *src, size_t count) {
-    uint32_t *ucs4_dst = reinterpret_cast<uint32_t *>(dst);
-    const uint16_t *utf16_src = reinterpret_cast<const uint16_t *>(src);
-    // run until we reach the maximum number of characters (count),
-    // or null-termination (*utf16_src)
-    for (size_t idx = 0; idx < count && *utf16_src; ++idx) {
-        uint16_t ch = *utf16_src++;
-        uint32_t ucs4_ch;
-        if (ch >= 0xd800 && ch <= 0xdfff) {
-            // surrogate pair
-            uint32_t upper = 0x3ffu & ch;
-            uint32_t lower = 0x3ffu & (*utf16_src++);
-            ucs4_ch = (upper << 10) + lower;
-        } else {
-            ucs4_ch = ch;
-        }
-
-        ucs4_dst[idx] = ucs4_ch;
-    }
 }
 
 //
@@ -350,7 +300,9 @@ static void convert_ucs4_from_utf16(void *dst, const void *src, size_t count) {
 //
 // The only cases that need to be supported are the ones that can
 // actually be generated from SQL types
-static void fill_NAvalue(void *value, PyArray_Descr *dtype) {
+static void
+fill_NAvalue(void *value, PyArray_Descr *dtype)
+{
     int nptype = dtype->type_num;
     int elsize = dtype->elsize;
     switch (nptype) {
@@ -390,16 +342,14 @@ static void fill_NAvalue(void *value, PyArray_Descr *dtype) {
             ((npy_int64 *)value)[0] = NPY_DATETIME_NAT;
             break;
         default:
-            RaiseErrorV(
-                    0, PyExc_TypeError, "NumPy data type %d is not supported.", nptype
-            );
+            RaiseErrorV(0, PyExc_TypeError, "NumPy data type %d is not supported.", nptype);
     }
 }
 
-static int fill_NAarray(
-        PyArrayObject *array, PyArrayObject *array_nulls, SQLLEN *nulls, size_t offset,
-        size_t nrows
-) {
+static int
+fill_NAarray(PyArrayObject *array, PyArrayObject *array_nulls, SQLLEN *nulls, size_t offset,
+             size_t nrows)
+{
     // Fill array with NA info in nullarray coming from ODBC
     npy_intp elsize_array = PyArray_ITEMSIZE(array);
     char *data_array = PyArray_BYTES(array);
@@ -418,13 +368,15 @@ static int fill_NAarray(
             if (data_null[i] == SQL_NULL_DATA) {
                 *data_array_nulls = NPY_TRUE;
                 fill_NAvalue(data_array, PyArray_DESCR(array));
-            } else {
+            }
+            else {
                 *data_array_nulls = NPY_FALSE;
             }
             data_array += elsize_array;
             data_array_nulls += elsize_array_nulls;
         }
-    } else {
+    }
+    else {
         for (size_t i = 0; i < nrows; ++i) {
             // If NULL are detected, don't show data in array
             if (data_null[i] == SQL_NULL_DATA) {
@@ -441,14 +393,12 @@ static int fill_NAarray(
 // convert from ODBC format to NumPy format for selected types
 // only types that need conversion are handled.
 //
-static void convert_buffer(
-        PyArrayObject *dst_array, void *src, int sql_c_type, SQLLEN offset,
-        npy_intp nrows
-) {
+static void
+convert_buffer(PyArrayObject *dst_array, void *src, int sql_c_type, SQLLEN offset, npy_intp nrows)
+{
     switch (sql_c_type) {
         case SQL_C_TYPE_DATE: {
-            npy_datetime *dst =
-                    reinterpret_cast<npy_datetime *>(PyArray_DATA(dst_array)) + offset;
+            npy_datetime *dst = reinterpret_cast<npy_datetime *>(PyArray_DATA(dst_array)) + offset;
             DATE_STRUCT *dates = static_cast<DATE_STRUCT *>(src);
             for (npy_intp i = 0; i < nrows; ++i) {
                 dst[i] = convert_datestruct_to_datetime(dates + i);
@@ -456,8 +406,7 @@ static void convert_buffer(
         } break;
 
         case SQL_C_TYPE_TIMESTAMP: {
-            npy_datetime *dst =
-                    reinterpret_cast<npy_datetime *>(PyArray_DATA(dst_array)) + offset;
+            npy_datetime *dst = reinterpret_cast<npy_datetime *>(PyArray_DATA(dst_array)) + offset;
             TIMESTAMP_STRUCT *timestamps = static_cast<TIMESTAMP_STRUCT *>(src);
             for (npy_intp i = 0; i < nrows; ++i) {
                 dst[i] = convert_datetimestruct_to_datetime(timestamps + i);
@@ -477,20 +426,25 @@ static void convert_buffer(
             // note that this conversion will only be called when using ucs2/utf16
             const SQLWCHAR *utf16 = reinterpret_cast<SQLWCHAR *>(src);
             size_t len = PyArray_ITEMSIZE(dst_array) / sizeof(npy_ucs4);
-            npy_ucs4 *ucs4 = reinterpret_cast<npy_ucs4 *>(PyArray_DATA(dst_array)) +
-                             offset * len;
+            npy_ucs4 *ucs4 = reinterpret_cast<npy_ucs4 *>(PyArray_DATA(dst_array)) + offset * len;
+
             for (npy_intp i = 0; i < nrows; ++i) {
                 const SQLWCHAR *src = utf16 + 2 * len * i;
+                size_t bufsize = len * sizeof(SQLWCHAR);
+
+                // Create a UnicodeString to convert from the UTF16 stored in the database
+                icu::UnicodeString unicode = icu::UnicodeString(
+                    reinterpret_cast<const char16_t *>(src),
+                    bufsize
+                );
+
+                // Convert the UnicodeString to UTF8
+                std::string strbuf;
+                unicode.toUTF8String(strbuf);
+
+                // Copy the multi-byte UTF8 string to the destination as a wchar_t string
                 npy_ucs4 *dst = ucs4 + len * i;
-                TRACE_NOLOC(
-                        "Converting utf-16 buffer at %p:\n'%s'\n", src,
-                        raw_buffer_as_print_string(src, 2 * len * sizeof(src[0]))
-                );
-                convert_ucs4_from_utf16(dst, src, len);
-                TRACE_NOLOC(
-                        "resulting in ucs4 buffer at %p:\n'%s'\n", dst,
-                        raw_buffer_as_print_string(dst, len * sizeof(dst[0]))
-                );
+                std::mbstowcs(reinterpret_cast<wchar_t *>(dst), strbuf.c_str(), len);
             }
         } break;
 
@@ -504,7 +458,9 @@ static void convert_buffer(
 //
 // return 0 on success 1 on failure
 //          on failure the returned array is unmodified
-static int resize_array(PyArrayObject *array, npy_intp new_len) {
+static int
+resize_array(PyArrayObject *array, npy_intp new_len)
+{
     int elsize = PyArray_ITEMSIZE(array);
     void *old_data = PyArray_DATA(array);
     npy_intp old_len = PyArray_DIMS(array)[0];
@@ -517,7 +473,8 @@ static int resize_array(PyArrayObject *array, npy_intp new_len) {
         if (new_data == NULL) {
             return 1;
         }
-    } else {
+    }
+    else {
         free(old_data);
     }
 
@@ -530,8 +487,7 @@ static int resize_array(PyArrayObject *array, npy_intp new_len) {
     array->data = (char *)new_data;
 #endif
     if ((old_len < new_len) && PyArray_ISSTRING(array)) {
-        memset(PyArray_BYTES(array) + old_len * elsize, 0,
-               (new_len - old_len) * elsize);
+        memset(PyArray_BYTES(array) + old_len * elsize, 0, (new_len - old_len) * elsize);
     }
 
     PyArray_DIMS(array)[0] = new_len;
@@ -541,29 +497,24 @@ static int resize_array(PyArrayObject *array, npy_intp new_len) {
 
 namespace {
 struct fetch_status {
-        fetch_status(SQLHSTMT h, SQLULEN chunk_size);
-        ~fetch_status();
+    fetch_status(SQLHSTMT h, SQLULEN chunk_size);
+    ~fetch_status();
 
-        SQLLEN rows_read_;
+    SQLLEN rows_read_;
 
-        /* old stmtattr to restore on destruction */
-        SQLHSTMT hstmt_;
-        SQLULEN old_row_bind_type_;
-        SQLULEN old_row_array_size_;
-        SQLULEN *old_rows_fetched_ptr_;
+    /* old stmtattr to restore on destruction */
+    SQLHSTMT hstmt_;
+    SQLULEN old_row_bind_type_;
+    SQLULEN old_row_array_size_;
+    SQLULEN *old_rows_fetched_ptr_;
 };
 
-fetch_status::fetch_status(SQLHSTMT h, SQLULEN chunk_size) : hstmt_(h) {
+fetch_status::fetch_status(SQLHSTMT h, SQLULEN chunk_size) : hstmt_(h)
+{
     /* keep old stmt attr */
-    SQLGetStmtAttr(
-            hstmt_, SQL_ATTR_ROW_BIND_TYPE, &old_row_bind_type_, SQL_IS_UINTEGER, 0
-    );
-    SQLGetStmtAttr(
-            hstmt_, SQL_ATTR_ROW_ARRAY_SIZE, &old_row_array_size_, SQL_IS_UINTEGER, 0
-    );
-    SQLGetStmtAttr(
-            hstmt_, SQL_ATTR_ROWS_FETCHED_PTR, &old_rows_fetched_ptr_, SQL_IS_POINTER, 0
-    );
+    SQLGetStmtAttr(hstmt_, SQL_ATTR_ROW_BIND_TYPE, &old_row_bind_type_, SQL_IS_UINTEGER, 0);
+    SQLGetStmtAttr(hstmt_, SQL_ATTR_ROW_ARRAY_SIZE, &old_row_array_size_, SQL_IS_UINTEGER, 0);
+    SQLGetStmtAttr(hstmt_, SQL_ATTR_ROWS_FETCHED_PTR, &old_rows_fetched_ptr_, SQL_IS_POINTER, 0);
 
     /* configure our stmt attr */
     SQLSetStmtAttr(hstmt_, SQL_ATTR_ROW_BIND_TYPE, SQL_BIND_BY_COLUMN, 0);
@@ -571,42 +522,40 @@ fetch_status::fetch_status(SQLHSTMT h, SQLULEN chunk_size) : hstmt_(h) {
     SQLSetStmtAttr(hstmt_, SQL_ATTR_ROWS_FETCHED_PTR, (SQLPOINTER)&rows_read_, 0);
 }
 
-fetch_status::~fetch_status() {
+fetch_status::~fetch_status()
+{
     /* unbind all cols */
     SQLFreeStmt(hstmt_, SQL_UNBIND);
     /* restore stmt attr */
     SQLSetStmtAttr(hstmt_, SQL_ATTR_ROW_BIND_TYPE, (SQLPOINTER)old_row_bind_type_, 0);
     SQLSetStmtAttr(hstmt_, SQL_ATTR_ROW_ARRAY_SIZE, (SQLPOINTER)old_row_array_size_, 0);
-    SQLSetStmtAttr(
-            hstmt_, SQL_ATTR_ROWS_FETCHED_PTR, (SQLPOINTER)old_rows_fetched_ptr_, 0
-    );
+    SQLSetStmtAttr(hstmt_, SQL_ATTR_ROWS_FETCHED_PTR, (SQLPOINTER)old_rows_fetched_ptr_, 0);
     hstmt_ = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 struct column_desc {
-        column_desc();
-        ~column_desc();
+    column_desc();
+    ~column_desc();
 
-        // fields coming from describe col
-        SQLCHAR sql_name_[300];
-        SQLSMALLINT sql_type_;  // type returned in SQLDescribeCol.
-        SQLULEN sql_size_;
-        SQLSMALLINT sql_decimal_;
-        SQLSMALLINT sql_nullable_;
+    // fields coming from describe col
+    SQLCHAR sql_name_[300];
+    SQLSMALLINT sql_type_;  // type returned in SQLDescribeCol.
+    SQLULEN sql_size_;
+    SQLSMALLINT sql_decimal_;
+    SQLSMALLINT sql_nullable_;
 
-        // type info
-        PyArray_Descr *npy_type_descr_;  // type to be used in NumPy
-        int sql_c_type_;                 // c_type to be use when binding the column.
+    // type info
+    PyArray_Descr *npy_type_descr_;  // type to be used in NumPy
+    int sql_c_type_;                 // c_type to be use when binding the column.
 
-        // buffers used
-        PyArrayObject *npy_array_;  // the numpy array that will hold the result
-        PyArrayObject
-                *npy_array_nulls_;  // the boolean numpy array holding null information
-        void *scratch_buffer_;      // source buffer when it needs conversion
-        SQLLEN *null_buffer_;
-        SQLLEN element_buffer_size_;
+    // buffers used
+    PyArrayObject *npy_array_;        // the numpy array that will hold the result
+    PyArrayObject *npy_array_nulls_;  // the boolean numpy array holding null information
+    void *scratch_buffer_;            // source buffer when it needs conversion
+    SQLLEN *null_buffer_;
+    SQLLEN element_buffer_size_;
 };
 
 column_desc::column_desc()
@@ -615,9 +564,12 @@ column_desc::column_desc()
       npy_array_nulls_(0),
       scratch_buffer_(0),
       null_buffer_(0),
-      element_buffer_size_(0) {}
+      element_buffer_size_(0)
+{
+}
 
-column_desc::~column_desc() {
+column_desc::~column_desc()
+{
     if (null_buffer_) {
         GUARDED_DEALLOC(null_buffer_);
     }
@@ -631,7 +583,8 @@ column_desc::~column_desc() {
     Py_XDECREF(npy_type_descr_);
 }
 
-inline PyArray_Descr *dtype_from_string(const char *dtype_str_spec)
+inline PyArray_Descr *
+dtype_from_string(const char *dtype_str_spec)
 /*
   returns a dtype (PyArray_Descr) built from a string that describes it
 */
@@ -646,7 +599,9 @@ inline PyArray_Descr *dtype_from_string(const char *dtype_str_spec)
     return 0;
 }
 
-inline PyArray_Descr *string_dtype(size_t length) {
+inline PyArray_Descr *
+string_dtype(size_t length)
+{
     PyArray_Descr *result = PyArray_DescrNewFromType(NPY_STRING);
     if (result) {
         result->elsize = static_cast<int>(length + 1) * sizeof(char);
@@ -654,7 +609,9 @@ inline PyArray_Descr *string_dtype(size_t length) {
     return result;
 }
 
-inline PyArray_Descr *unicode_dtype(size_t length) {
+inline PyArray_Descr *
+unicode_dtype(size_t length)
+{
     PyArray_Descr *result = PyArray_DescrNewFromType(NPY_UNICODE);
     if (result) {
         result->elsize = static_cast<int>(length + 1) * sizeof(npy_ucs4);
@@ -671,7 +628,9 @@ inline PyArray_Descr *unicode_dtype(size_t length) {
   remember to check support for any new NumPy type added in the function
   that handles nulls (fill_NAvalue)
  */
-int map_column_desc_types(column_desc &cd, bool unicode) {
+int
+map_column_desc_types(column_desc &cd, bool unicode)
+{
     PyArray_Descr *dtype = 0;
 
 #define MAP_SUCCESS(DTYPE, CTYPE)   \
@@ -815,37 +774,34 @@ int map_column_desc_types(column_desc &cd, bool unicode) {
             "WARN: Failed translation of SQL\n\ttype: %s(%d)\n\tsize: "
             "%d\n\tuse_unicode: %s\n",
             sql_type_to_str(cd.sql_type_), (int)cd.sql_type_, (int)cd.sql_size_,
-            unicode ? "Yes" : "No"
-    );
+            unicode ? "Yes" : "No");
 
     return 1;
 }
 
 struct query_desc {
-        SQLRETURN init_from_statement(SQLHSTMT hstmt);
-        SQLRETURN bind_cols();
+    SQLRETURN init_from_statement(SQLHSTMT hstmt);
+    SQLRETURN bind_cols();
 
-        void lowercase_fields();
-        int translate_types(bool use_unicode);
-        int ensure();
-        void convert(size_t read);
-        void advance(size_t read);
+    void lowercase_fields();
+    int translate_types(bool use_unicode);
+    int ensure();
+    void convert(size_t read);
+    void advance(size_t read);
 
-        int allocate_buffers(
-                size_t initial_result_count, size_t chunk_size, bool keep_nulls
-        );
-        int resize(size_t new_count);
-        void cleanup();
+    int allocate_buffers(size_t initial_result_count, size_t chunk_size, bool keep_nulls);
+    int resize(size_t new_count);
+    void cleanup();
 
-        void dump_column_mapping() const;
+    void dump_column_mapping() const;
 
-        query_desc() : allocated_results_count_(0), chunk_size_(0), offset_(0) {}
+    query_desc() : allocated_results_count_(0), chunk_size_(0), offset_(0) {}
 
-        std::vector<column_desc> columns_;
-        size_t allocated_results_count_;
-        size_t chunk_size_;
-        size_t offset_;
-        SQLHSTMT hstmt_;
+    std::vector<column_desc> columns_;
+    size_t allocated_results_count_;
+    size_t chunk_size_;
+    size_t offset_;
+    SQLHSTMT hstmt_;
 };
 
 /*
@@ -854,7 +810,9 @@ struct query_desc {
   returns SQL_SUCCESS if successful, otherwise it returns the
   SQLRESULT from the SQL command that failed.
 */
-SQLRETURN query_desc::init_from_statement(SQLHSTMT hstmt) {
+SQLRETURN
+query_desc::init_from_statement(SQLHSTMT hstmt)
+{
     cleanup();
 
     hstmt_ = hstmt;
@@ -872,11 +830,9 @@ SQLRETURN query_desc::init_from_statement(SQLHSTMT hstmt) {
     // columns are 1 base on ODBC...
     for (SQLSMALLINT field = 1; field <= field_count; field++) {
         column_desc &c_desc = columns_[field - 1];
-        ret = SQLDescribeCol(
-                hstmt, field, &c_desc.sql_name_[0], _countof(c_desc.sql_name_), NULL,
-                &c_desc.sql_type_, &c_desc.sql_size_, &c_desc.sql_decimal_,
-                &c_desc.sql_nullable_
-        );
+        ret = SQLDescribeCol(hstmt, field, &c_desc.sql_name_[0], _countof(c_desc.sql_name_), NULL,
+                             &c_desc.sql_type_, &c_desc.sql_size_, &c_desc.sql_decimal_,
+                             &c_desc.sql_nullable_);
 
         if (!SQL_SUCCEEDED(ret)) {
             return ret;
@@ -886,30 +842,27 @@ SQLRETURN query_desc::init_from_statement(SQLHSTMT hstmt) {
     return SQL_SUCCESS;
 }
 
-SQLRETURN query_desc::bind_cols() {
+SQLRETURN
+query_desc::bind_cols()
+{
     SQLUSMALLINT col_number = 1;
 
     TRACE_NOLOC("\nBinding columns:\n");
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         void *bind_ptr;
         if (it->scratch_buffer_) {
             bind_ptr = it->scratch_buffer_;
-        } else {
+        }
+        else {
             PyArrayObject *array = it->npy_array_;
-            bind_ptr = static_cast<void *>(
-                    PyArray_BYTES(array) + (offset_ * PyArray_ITEMSIZE(array))
-            );
+            bind_ptr = static_cast<void *>(PyArray_BYTES(array) +
+                                           (this->offset_ * PyArray_ITEMSIZE(array)));
         }
 
-        TRACE_NOLOC(
-                "\tcolumn:%-10.10s address:%p %s\n", it->sql_name_, bind_ptr,
-                bind_ptr == it->scratch_buffer_ ? "(scratch)" : ""
-        );
-        SQLRETURN status = SQLBindCol(
-                hstmt_, col_number, it->sql_c_type_, bind_ptr, it->element_buffer_size_,
-                it->null_buffer_
-        );
+        TRACE_NOLOC("\tcolumn:%-10.10s address:%p %s\n", it->sql_name_, bind_ptr,
+                    bind_ptr == it->scratch_buffer_ ? "(scratch)" : "");
+        SQLRETURN status = SQLBindCol(hstmt_, col_number, it->sql_c_type_, bind_ptr,
+                                      it->element_buffer_size_, it->null_buffer_);
         if (!SQL_SUCCEEDED(status)) {
             return status;
         }
@@ -923,9 +876,10 @@ SQLRETURN query_desc::bind_cols() {
 /*
   Converts all the field names to lowercase
 */
-void query_desc::lowercase_fields() {
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+void
+query_desc::lowercase_fields()
+{
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         _strlwr((char *)&it->sql_name_[0]);
     }
 }
@@ -934,10 +888,11 @@ void query_desc::lowercase_fields() {
   Performs the mapping of types from SQL to numpy dtype and C type.
   returns a count with the number of failed translations
 */
-int query_desc::translate_types(bool use_unicode) {
+int
+query_desc::translate_types(bool use_unicode)
+{
     int failed_translations = 0;
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         failed_translations += map_column_desc_types(*it, use_unicode);
     }
 
@@ -951,18 +906,17 @@ int query_desc::translate_types(bool use_unicode) {
 
   returns the number of failed allocations.
  */
-int query_desc::allocate_buffers(
-        size_t buffer_element_count, size_t chunk_element_count, bool keep_nulls
-) {
+int
+query_desc::allocate_buffers(size_t buffer_element_count, size_t chunk_element_count,
+                             bool keep_nulls)
+{
     int alloc_errors = 0;
     npy_intp npy_array_count = static_cast<npy_intp>(buffer_element_count);
 
     TRACE_NOLOC("\nAllocating arrays for column data:\n");
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         // Allocate the numpy buffer for the result
-        PyObject *arr =
-                PyArray_SimpleNewFromDescr(1, &npy_array_count, it->npy_type_descr_);
+        PyObject *arr = PyArray_SimpleNewFromDescr(1, &npy_array_count, it->npy_type_descr_);
         if (!arr) {
             // failed to allocate mem_buffer
             alloc_errors++;
@@ -972,8 +926,7 @@ int query_desc::allocate_buffers(
 
         if (PyArray_ISSTRING(array)) {
             // clear memory on strings or undefined
-            memset(PyArray_BYTES(array), 0,
-                   buffer_element_count * PyArray_ITEMSIZE(array));
+            memset(PyArray_BYTES(array), 0, buffer_element_count * PyArray_ITEMSIZE(array));
         }
 
         it->npy_array_ = array;
@@ -982,9 +935,7 @@ int query_desc::allocate_buffers(
             alloc_errors++;
         }
 
-        TRACE_NOLOC(
-                "\tcolumn: %-10.10s address: %p\n", it->sql_name_, PyArray_DATA(array)
-        );
+        TRACE_NOLOC("\tcolumn: %-10.10s address: %p\n", it->sql_name_, PyArray_DATA(array));
         // SimpleNewFromDescr steals the reference for the dtype
         Py_INCREF(it->npy_type_descr_);
         // if it is a type that needs to perform conversion,
@@ -1002,8 +953,7 @@ int query_desc::allocate_buffers(
                 }
             } break;
             case SQL_C_TYPE_TIMESTAMP: {
-                void *mem =
-                        GUARDED_ALLOC(chunk_element_count * sizeof(TIMESTAMP_STRUCT));
+                void *mem = GUARDED_ALLOC(chunk_element_count * sizeof(TIMESTAMP_STRUCT));
                 it->scratch_buffer_ = mem;
                 if (!mem) {
                     alloc_errors++;
@@ -1042,18 +992,15 @@ int query_desc::allocate_buffers(
                     TRACE_NOLOC(
                             "\tscratch memory for unicode conversion (sizeof(SQLWCHAR) "
                             "is %d)\n",
-                            (int)sizeof(SQLWCHAR)
-                    );
+                            (int)sizeof(SQLWCHAR));
 
-                    size_t item_count =
-                            PyArray_ITEMSIZE(it->npy_array_) / sizeof(npy_ucs4);
+                    size_t item_count = PyArray_ITEMSIZE(it->npy_array_) / sizeof(npy_ucs4);
                     // 2 due to possibility of surrogate.
                     // doing the math, the final buffer could be used instead of a
                     // scratch buffer, but would require code that can do the conversion
                     // in-place.
-                    void *mem = GUARDED_ALLOC(
-                            chunk_element_count * item_count * sizeof(SQLWCHAR) * 2
-                    );
+                    void *mem =
+                            GUARDED_ALLOC(chunk_element_count * item_count * sizeof(SQLWCHAR) * 2);
                     it->scratch_buffer_ = mem;
                     if (!mem) {
                         alloc_errors++;
@@ -1096,18 +1043,17 @@ int query_desc::allocate_buffers(
   resize the numpy array elements to the new_size.
   the chunk_size and associated buffers are to be preserved.
  */
-int query_desc::resize(size_t new_size) {
+int
+query_desc::resize(size_t new_size)
+{
     int alloc_fail = 0;
     npy_intp size = static_cast<npy_intp>(new_size);
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         void *old_data = PyArray_DATA(it->npy_array_);
         int failed = resize_array(it->npy_array_, size);
         void *new_data = PyArray_DATA(it->npy_array_);
 
-        TRACE_NOLOC(
-                "Array for column %s moved. %p -> %p", it->sql_name_, old_data, new_data
-        );
+        TRACE_NOLOC("Array for column %s moved. %p -> %p", it->sql_name_, old_data, new_data);
         // if it has an array for nulls, resize it as well
         if (it->npy_array_nulls_) {
             failed += resize_array(it->npy_array_nulls_, size);
@@ -1130,7 +1076,9 @@ int query_desc::resize(size_t new_size) {
   return 0 if everything ok, any other value means a problem was found
   due to resizing
  */
-int query_desc::ensure() {
+int
+query_desc::ensure()
+{
     if (allocated_results_count_ < offset_ + chunk_size_) {
         return resize(offset_ + chunk_size_);
     }
@@ -1147,31 +1095,23 @@ int query_desc::ensure() {
   The conversion also includes the handling of nulls. In the case of
   NULL a default value is inserted in the resulting column.
  */
-void query_desc::convert(size_t count) {
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end();
-         ++it) {
+void
+query_desc::convert(size_t count)
+{
+    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         // TODO: It should be possible to generalize this and make it
         //       more convenient to add types if a conversion function
         //       was placed in the column structure.
         //       Probably nulls could be handled by that conversion
         //       function as well.
         if (it->scratch_buffer_) {  // a conversion is needed
-            CHECK_ALLOC_GUARDS(
-                    it->scratch_buffer_, "scratch buffer for field %s\n", it->sql_name_
-            );
-            convert_buffer(
-                    it->npy_array_, it->scratch_buffer_, it->sql_c_type_, offset_, count
-            );
+            CHECK_ALLOC_GUARDS(it->scratch_buffer_, "scratch buffer for field %s\n", it->sql_name_);
+            convert_buffer(it->npy_array_, it->scratch_buffer_, it->sql_c_type_, offset_, count);
         }
 
         if (it->null_buffer_) {  // nulls are present
-            CHECK_ALLOC_GUARDS(
-                    it->null_buffer_, "null buffer for field %s\n", it->sql_name_
-            );
-            fill_NAarray(
-                    it->npy_array_, it->npy_array_nulls_, it->null_buffer_, offset_,
-                    count
-            );
+            CHECK_ALLOC_GUARDS(it->null_buffer_, "null buffer for field %s\n", it->sql_name_);
+            fill_NAarray(it->npy_array_, it->npy_array_nulls_, it->null_buffer_, offset_, count);
         }
     }
 }
@@ -1179,54 +1119,58 @@ void query_desc::convert(size_t count) {
 /*
   Advance the current position
  */
-void query_desc::advance(size_t count) { offset_ += count; }
+void
+query_desc::advance(size_t count)
+{
+    offset_ += count;
+}
 
-void query_desc::cleanup() {
+void
+query_desc::cleanup()
+{
     std::vector<column_desc> tmp;
     columns_.swap(tmp);
 }
 
-void query_desc::dump_column_mapping() const {
+void
+query_desc::dump_column_mapping() const
+{
     const char *fmt_str_head = "%-20.20s %-15.15s %-10.10s %-8.8s %-20.20s\n";
     const char *fmt_str = "%-20.20s %-15.15s %-10u %-8.8s %-20.20s\n";
     const char *dashes = "----------------------------------------";
     TRACE_NOLOC(fmt_str_head, "name", "sql type", "size", "null?", "c type");
     TRACE_NOLOC(fmt_str_head, dashes, dashes, dashes, dashes, dashes);
-    for (std::vector<column_desc>::const_iterator it = columns_.begin();
-         it < columns_.end(); ++it) {
-        TRACE_NOLOC(
-                fmt_str, it->sql_name_, sql_type_to_str(it->sql_type_), it->sql_size_,
-                it->sql_nullable_ ? "null" : "not null",
-                sql_c_type_to_str(it->sql_c_type_)
-        );
+    for (std::vector<column_desc>::const_iterator it = columns_.begin(); it < columns_.end();
+         ++it) {
+        TRACE_NOLOC(fmt_str, it->sql_name_, sql_type_to_str(it->sql_type_), it->sql_size_,
+                    it->sql_nullable_ ? "null" : "not null", sql_c_type_to_str(it->sql_c_type_));
     }
 }
 }  // namespace
 
-size_t print_error_types(
-        query_desc &qd, size_t err_count, char *buff, size_t buff_size
-) {
-    size_t acc = snprintf(
-            buff, buff_size, "%d fields with unsupported types found:\n", (int)err_count
-    );
+size_t
+print_error_types(query_desc &qd, size_t err_count, char *buff, size_t buff_size)
+{
+    size_t acc =
+            snprintf(buff, buff_size, "%d fields with unsupported types found:\n", (int)err_count);
 
-    for (std::vector<column_desc>::iterator it = qd.columns_.begin();
-         it < qd.columns_.end(); ++it) {
+    for (std::vector<column_desc>::iterator it = qd.columns_.begin(); it < qd.columns_.end();
+         ++it) {
         if (0 == it->npy_type_descr_) {
             // if numpy type descr is empty means a failed translation.
-            acc += snprintf(
-                    buff + acc, acc < buff_size ? buff_size - acc : 0,
-                    "\t'%s' type: %s (%d) size: %d decimal: %d\n", it->sql_name_,
-                    sql_type_to_str(it->sql_type_), (int)it->sql_type_,
-                    (int)it->sql_size_, (int)it->sql_decimal_
-            );
+            acc += snprintf(buff + acc, acc < buff_size ? buff_size - acc : 0,
+                            "\t'%s' type: %s (%d) size: %d decimal: %d\n", it->sql_name_,
+                            sql_type_to_str(it->sql_type_), (int)it->sql_type_, (int)it->sql_size_,
+                            (int)it->sql_decimal_);
         }
     }
 
     return acc;
 }
 
-int raise_unsupported_types_exception(int err_count, query_desc &qd) {
+int
+raise_unsupported_types_exception(int err_count, query_desc &qd)
+{
     char error[4'096];
     char *use_string = error;
     size_t count = print_error_types(qd, err_count, error, sizeof(error));
@@ -1265,9 +1209,9 @@ int raise_unsupported_types_exception(int err_count, query_desc &qd) {
 //
 // @returns 0 on success
 */
-static int perform_array_query(
-        query_desc &result, Cursor *cur, npy_intp nrows, bool lower, bool want_nulls
-) {
+static int
+perform_array_query(query_desc &result, Cursor *cur, npy_intp nrows, bool lower, bool want_nulls)
+{
     SQLRETURN rc;
     /* XXX is true a good default?
        was: bool use_unicode = cur->cnxn->unicode_results; */
@@ -1278,7 +1222,8 @@ static int perform_array_query(
         // chunked, no know final size
         outsize = DEFAULT_ROWS_TO_BE_ALLOCATED;
         chunk_size = DEFAULT_ROWS_TO_BE_FETCHED;
-    } else {
+    }
+    else {
         // all in one go
         outsize = static_cast<size_t>(nrows);
         chunk_size = static_cast<size_t>(nrows);
@@ -1292,8 +1237,7 @@ static int perform_array_query(
           Won't ODBC fail gracefully (through an ODBC error code) when
           trying to use a bad handle?
          */
-        return 0 ==
-               RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+        return 0 == RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
     }
 
     {
@@ -1304,8 +1248,7 @@ static int perform_array_query(
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE) {
         // The connection was closed by another thread in the
         // ALLOW_THREADS block above.
-        return 0 ==
-               RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+        return 0 == RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
     }
 
     if (!SQL_SUCCEEDED(rc)) {
@@ -1313,10 +1256,8 @@ static int perform_array_query(
         // multiple statements (separated by ;) were submitted.  This
         // is not documented, but I've seen it with multiple
         // successful inserts.
-        return 0 == RaiseErrorFromHandle(
-                            cur->cnxn, "ODBC failed to describe the resulting columns",
-                            cur->cnxn->hdbc, cur->hstmt
-                    );
+        return 0 == RaiseErrorFromHandle(cur->cnxn, "ODBC failed to describe the resulting columns",
+                                         cur->cnxn->hdbc, cur->hstmt);
     }
 
     if (lower) {
@@ -1336,10 +1277,7 @@ static int perform_array_query(
 
     int allocation_errors = result.allocate_buffers(outsize, chunk_size, want_nulls);
     if (allocation_errors) {
-        return 0 ==
-               RaiseErrorV(
-                       0, PyExc_MemoryError, "Can't allocate result buffers", outsize
-               );
+        return 0 == RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers", outsize);
     }
 
     fetch_status status(cur->hstmt, result.chunk_size_);
@@ -1347,19 +1285,23 @@ static int perform_array_query(
         TRACE_NOLOC("Fetching %d rows..\n", result.chunk_size_);
         int error = result.ensure();
         if (error) {
-            return 0 ==
-                   RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
+            return 0 == RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
         }
 
         rc = result.bind_cols();
         if (!SQL_SUCCEEDED(rc)) {
-            return 0 == RaiseErrorFromHandle(
-                                cur->cnxn, "ODBC failed when binding columns",
-                                cur->cnxn->hdbc, cur->hstmt
-                        );
+            return 0 == RaiseErrorFromHandle(cur->cnxn, "ODBC failed when binding columns",
+                                             cur->cnxn->hdbc, cur->hstmt);
         }
 
         // Do the fetch
+        // According to the microsoft sql docs for SQLFetchScroll:
+        //
+        //    SQL_FETCH_NEXT 	Return the next rowset. This is equivalent to calling
+        //    SQLFetch.
+        //                      SQLFetchScroll ignores the value of FetchOffset.
+        //
+        // Why is this used here?
         {
             PyNoGIL ctxt;
             rc = SQLFetchScroll(status.hstmt_, SQL_FETCH_NEXT, 0);
@@ -1372,7 +1314,8 @@ static int perform_array_query(
                                                   // if (rc == SQL_NO_DATA) {
             TRACE_NOLOC("No more data available (%d)\n", (int)rc);
             break;
-        } else if (rc < 0) {
+        }
+        else if (rc < 0) {
             PyErr_SetString(PyExc_RuntimeError, "error in SQLFetchScroll");
             return rc;
         }
@@ -1385,9 +1328,7 @@ static int perform_array_query(
             TRACE_NOLOC(
                     "WARN: rows read reported is greater than requested (Read: %d, "
                     "Requested: %d)\n",
-                    static_cast<int>(status.rows_read_),
-                    static_cast<int>(result.chunk_size_)
-            );
+                    static_cast<int>(status.rows_read_), static_cast<int>(result.chunk_size_));
 
             status.rows_read_ = 0;
         }
@@ -1413,52 +1354,50 @@ static int perform_array_query(
             // note that this shouldn't be happening, as a shrinking realloc
             // should always succeed!
             TRACE_NOLOC("WARN: Unexpected failure when trying to shrink arrays");
-            return 0 ==
-                   RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
+            return 0 == RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
         }
     }
     return 0;
 }
 
-static PyObject *query_desc_to_dictarray(query_desc &qd, const char *null_suffix)
-/*
-  Build a dictarray (dictionary of NumPy arrays) from the query_desc
-
-  returns the python dictionary object, or 0 if an error occurred. In case
-  of an error the appropriate python exception is raised.
+/**
+ * @brief Build a dictionary of numpy arrays from the a query descriptor.
+ *
+ * @param qd Query descriptor containing query results
+ * @param null_suffix Suffix to add to the column name for the bool column holding any
+ * nulls. NULL means null values are not returned
+ * @return A python dictionary filled with numpy arrays
  */
+static PyObject *
+query_desc_to_dictarray(query_desc &qd, const char *null_suffix)
 {
     PyObject *dictarray = PyDict_New();
+    if (dictarray == NULL) {
+        return PyErr_NoMemory();
+    }
 
-    if (dictarray) {
-        for (std::vector<column_desc>::iterator it = qd.columns_.begin();
-             it < qd.columns_.end(); ++it) {
-            int rv;
-            rv = PyDict_SetItemString(
-                    dictarray, reinterpret_cast<char *>(it->sql_name_),
-                    reinterpret_cast<PyObject *>(it->npy_array_)
-            );
+    int rv;
+    for (std::vector<column_desc>::iterator it = qd.columns_.begin(); it < qd.columns_.end();
+         ++it) {
+        rv = PyDict_SetItemString(dictarray, reinterpret_cast<char *>(it->sql_name_),
+                                  reinterpret_cast<PyObject *>(it->npy_array_));
 
+        if (rv < 0) {
+            // PyDict_SetItemString will set the error indicator if something goes
+            // wrong; just return NULL.
+            Py_DECREF(dictarray);
+            return NULL;
+        }
+
+        if (it->npy_array_nulls_) {
+            char column_nulls_name[350];
+            snprintf(column_nulls_name, sizeof(column_nulls_name), "%s%s", it->sql_name_,
+                     null_suffix);
+            rv = PyDict_SetItemString(dictarray, column_nulls_name,
+                                      reinterpret_cast<PyObject *>(it->npy_array_nulls_));
             if (rv < 0) {
-                /* out of mem is very likely here */
                 Py_DECREF(dictarray);
-                return 0;
-            }
-
-            if (it->npy_array_nulls_) {
-                char column_nulls_name[350];
-                snprintf(
-                        column_nulls_name, sizeof(column_nulls_name), "%s%s",
-                        it->sql_name_, null_suffix
-                );
-                rv = PyDict_SetItemString(
-                        dictarray, column_nulls_name,
-                        reinterpret_cast<PyObject *>(it->npy_array_nulls_)
-                );
-                if (rv < 0) {
-                    Py_DECREF(dictarray);
-                    return 0;
-                }
+                return NULL;
             }
         }
     }
@@ -1466,34 +1405,23 @@ static PyObject *query_desc_to_dictarray(query_desc &qd, const char *null_suffix
     return dictarray;
 }
 
-//
-// Create and fill a dictarray out of a query
-//
-// arguments:
-//   cursor - cursor object to fetch the rows from
-//   nrows - number of rows to fetch, -1 for all rows
-//   null_suffix - suffix to add to the column name for the bool column holding the
-//   nulls. NULL means we don't want nulls.
-static PyObject *create_fill_dictarray(
-        Cursor *cursor, npy_intp nrows, const char *null_suffix
-) {
-    int error;
+/**
+ * @brief Create and fill a dictionary of numpy arrays from a SQL query.
+ *
+ * @param cursor Cursor to fetch the rows from
+ * @param nrows Number of rows to fetch; if nrows = -1, all rows are fetched
+ * @param null_suffix Suffix to add to the column name for the bool column holding the
+ * nulls; NULL means nulls are not returned
+ * @return A Python dictionary filled with numpy arrays
+ */
+static PyObject *
+create_fill_dictarray(Cursor *cursor, npy_intp nrows, const char *null_suffix)
+{
     query_desc qd;
-
-    error = perform_array_query(qd, cursor, nrows, lowercase(), null_suffix != 0);
-    if (error) {
-        TRACE_NOLOC("WARN: perform_querydesc returned %d errors\n", error);
-        return 0;
+    if (perform_array_query(qd, cursor, nrows, lowercase(), null_suffix != 0) != 0) {
+        return NULL;
     }
-
-    TRACE_NOLOC("\nBuilding dictarray.\n");
-    PyObject *dictarray = query_desc_to_dictarray(qd, null_suffix);
-    if (!dictarray) {
-        TRACE_NOLOC("WARN: Failed to build dictarray from the query results.\n");
-        return 0;
-    }
-
-    return dictarray;
+    return query_desc_to_dictarray(qd, null_suffix);
 }
 
 // -----------------------------------------------------------------------------
@@ -1510,7 +1438,9 @@ static char *Cursor_npfetch_kwnames[] = {
 // The main cursor.fetchdict() method
 //
 
-PyObject *Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs) {
+PyObject *
+Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
+{
     PyObject *numpy = PyImport_ImportModule("numpy");
     if (!numpy) {
         return 0;
@@ -1529,32 +1459,20 @@ PyObject *Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs
     Py_ssize_t nrows = -1;
     PyObject *return_nulls = NULL;
     const char *null_suffix = "_isnull";
-    if (!PyArg_ParseTupleAndKeywords(
-                args, kwargs, "|nOs", Cursor_npfetch_kwnames, &nrows, &return_nulls,
-                &null_suffix
-        )) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|nOs", Cursor_npfetch_kwnames, &nrows,
+                                     &return_nulls, &null_suffix)) {
         return 0;
     }
 
     bool preserve_nulls = return_nulls ? PyObject_IsTrue(return_nulls) : false;
-    TRACE("Foo\n");
-    TRACE_NOLOC(
-            "\n\nCursor "
-            "fetchdictarray\n\tnrows:%d\n\treturn_nulls:%s\n\tnull_suffix:%s\n\thandle:"
-            "%p\n\tunicode_results:%s\n",
-            (int)nrows, preserve_nulls ? "yes" : "no", null_suffix,
-            (void *)cursor->hstmt
-    );
-    /*cursor->cnxn->unicode_results?"Yes":"No");*/
-
     import_array();
     if (PyArray_GetNDArrayCFeatureVersion() >= 7) {
         CAN_USE_DATETIME = true;
     }
 
-    npy_intp arg = nrows;
-    PyObject *rv = create_fill_dictarray(cursor, arg, preserve_nulls ? null_suffix : 0);
-    TRACE_NOLOC("\nCursor fetchdictarray done.\n\tdictarray: %p\n\n", rv);
+    PyObject *rv = create_fill_dictarray(cursor, nrows, preserve_nulls ? null_suffix : 0);
+
+    // Possible reference counting issue
     return rv;
 }
 

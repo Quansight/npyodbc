@@ -21,6 +21,8 @@ numpy_dep = declare_dependency(include_directories : numpy_inc)
 pyodbc_proj = subproject('pyodbc')
 pyodbc_dep = dependency('pyodbc')
 
+icu_dep = dependency('icu-uc')
+
 npyodbc_inc = include_directories('include')
 npyodbc_sources = [
   'src/npcontainer.cpp',
@@ -38,6 +40,7 @@ python.extension_module(
     odbc_dep,
     numpy_dep,
     pyodbc_dep,
+    icu_dep
   ],
   include_directories : [npyodbc_inc],
   install : true,
