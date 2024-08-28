@@ -1,10 +1,11 @@
 import string
+import warnings
 
 import hypothesis.strategies as st
 import npyodbc
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import given, reject, settings
 from numpy.testing import assert_allclose, assert_array_equal
 
 
@@ -136,8 +137,16 @@ def test_fetchdictarray_unicode_values(cursor, values):
     cursor.execute('SELECT * from t1;')
     inserted = cursor.fetchdictarray()
 
-    cursor.execute('SELECT * from t1;')
-    expected_text, expected_ints = zip(*cursor.fetchall())
+    try:
+        cursor.execute('SELECT * from t1;')
+        expected_text, expected_ints = zip(*cursor.fetchall())
+    except UnicodeDecodeError:
+        warnings.warn(
+            "Pyodbc itself failed to decode UTF16, but npyodbc did not.\n"
+            f"values: {values}",
+            stacklevel=1,
+        )
+        reject()
 
     expected = {
         'a': np.array(expected_text),
