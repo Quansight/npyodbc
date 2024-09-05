@@ -1,10 +1,11 @@
 import string
+import warnings
 
 import hypothesis.strategies as st
 import npyodbc
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import given, reject, settings
 from numpy.testing import assert_allclose, assert_array_equal
 
 
@@ -84,7 +85,6 @@ def test_fetchdictarray(cursor, values):
       store values larger than this in a REAL column, it gets converted to +/- inf.
     """
     cursor.execute('DROP TABLE IF EXISTS t1;')
-
     cursor.execute('CREATE TABLE t1(a text, b int, c real);')
 
     for value in values:
@@ -99,11 +99,9 @@ def test_fetchdictarray(cursor, values):
 
 
 @pytest.mark.sqlite()
-@pytest.mark.skip(reason="FDA doesn't handle unicode currently")
 def test_fetchdictarray_unicode(cursor):
-    """Test that fetchdictarray correctly handles unicode strings."""
+    """Test that fetchdictarray correctly a specific unicode string test case."""
     cursor.execute('DROP TABLE IF EXISTS t1;')
-
     cursor.execute('CREATE TABLE t1(a text, b int);')
     cursor.execute('INSERT INTO t1 values(?,?);', '𐀀', 0)
 
@@ -111,6 +109,51 @@ def test_fetchdictarray_unicode(cursor):
     expected = {'a': np.array(['𐀀']), 'b': np.array([0])}
 
     for key, value in expected.items():
-        assert_allclose(inserted[key], value)
+        assert_array_equal(inserted[key], value)
+
+    cleanup(cursor)
+
+
+@pytest.mark.sqlite()
+@settings(deadline=500)
+@given(
+    st.lists(
+        st.tuples(
+            st.text(max_size=30).filter(lambda x: x != '\U0010d800'),
+            st.integers(min_value=-(2**32)//2, max_value=(2**32)//2 - 1),
+        ),
+        min_size=1,
+        max_size=100,
+    ),
+)
+def test_fetchdictarray_unicode_values(cursor, values):
+    """Test that fetchdictarray correctly handles arrays of unicode strings."""
+    cursor.execute('DROP TABLE IF EXISTS t1;')
+    cursor.execute('CREATE TABLE t1(a text, b int);')
+
+    for text, val in values:
+        cursor.execute('INSERT INTO t1 values(?,?);', text, val)
+
+    cursor.execute('SELECT * from t1;')
+    inserted = cursor.fetchdictarray()
+
+    try:
+        cursor.execute('SELECT * from t1;')
+        expected_text, expected_ints = zip(*cursor.fetchall())
+    except UnicodeDecodeError:
+        warnings.warn(
+            "Pyodbc itself failed to decode UTF16, but npyodbc did not.\n"
+            f"values: {values}",
+            stacklevel=1,
+        )
+        reject()
+
+    expected = {
+        'a': np.array(expected_text),
+        'b': np.array(expected_ints),
+    }
+
+    for key, value in expected.items():
+        assert_array_equal(inserted[key], value)
 
     cleanup(cursor)
