@@ -31,6 +31,15 @@
 #include "pyodbcmodule.h"
 // clang-format on
 
+// Numpy 2.0 compatibility
+#if NPY_ABI_VERSION < 0x02000000
+  static inline void
+    PyDataType_SET_ELSIZE(PyArray_Descr *dtype, npy_intp size)
+    {
+        dtype->elsize = size;
+    }
+#endif
+
 /* controls the maximum text field width, a negative value indicates that the
    text size limit will be dynamic based on the sql type, e.g. varchar (4000) */
 Py_ssize_t iopro_text_limit = -1;
@@ -436,10 +445,8 @@ convert_buffer(PyArrayObject *dst_array, void *src, int sql_c_type, SQLLEN offse
                 size_t bufsize = len * sizeof(SQLWCHAR);
 
                 // Create a UnicodeString to convert from the UTF16 stored in the database
-                icu::UnicodeString unicode = icu::UnicodeString(
-                    reinterpret_cast<const char16_t *>(src),
-                    bufsize
-                );
+                icu::UnicodeString unicode =
+                        icu::UnicodeString(reinterpret_cast<const char16_t *>(src), bufsize);
 
                 // Convert the UnicodeString to UTF8
                 std::string strbuf;
@@ -783,15 +790,23 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
             break;
 
-        // unsupported types -------------------------------------------
-        // this includes:
-        // blobs:
-        // SQL_BINARY, SQL_VARBINARY, SQL_LONGVARBINARY
+        // Binary data types. These are null-padded bytestrings with a maximum
+        // length fixed by the length of the longest bytestring in the array.
+        // https://numpy.org/doc/stable/reference/c-api/dtype.html#c.NPY_TYPES.NPY_STRING
         case SQL_BINARY:
+        case SQL_VARBINARY:
+        case SQL_LONGVARBINARY:
             dtype = PyArray_DescrFromType(NPY_STRING);
             if (dtype != NULL) {
                 MAP_SUCCESS(dtype, SQL_BINARY);
             }
+
+            // Set the max number of characters in each element
+            PyDataType_SET_ELSIZE(
+                dtype,
+                static_cast<npy_int>(cd.sql_size_)
+            );
+
 
         default:
             break;
@@ -849,9 +864,17 @@ query_desc::init_from_statement(SQLHSTMT hstmt)
     // columns are 1 base on ODBC...
     for (SQLSMALLINT field = 1; field <= field_count; field++) {
         column_desc &c_desc = columns_[field - 1];
-        ret = SQLDescribeCol(hstmt, field, &c_desc.sql_name_[0], _countof(c_desc.sql_name_), NULL,
-                             &c_desc.sql_type_, &c_desc.sql_size_, &c_desc.sql_decimal_,
-                             &c_desc.sql_nullable_);
+        ret = SQLDescribeCol(
+            hstmt,
+            field,
+            &c_desc.sql_name_[0],
+            _countof(c_desc.sql_name_), // Max column name size is 300
+            NULL,
+            &c_desc.sql_type_,
+            &c_desc.sql_size_, // Maximum string length that can be stored in the column
+            &c_desc.sql_decimal_,
+            &c_desc.sql_nullable_
+        );
 
         if (!SQL_SUCCEEDED(ret)) {
             return ret;
@@ -877,8 +900,14 @@ query_desc::bind_cols()
                                            (this->offset_ * PyArray_ITEMSIZE(array)));
         }
 
-        SQLRETURN status = SQLBindCol(hstmt_, col_number, it->sql_c_type_, bind_ptr,
-                                      it->element_buffer_size_, it->null_buffer_);
+        SQLRETURN status = SQLBindCol(
+            hstmt_,
+            col_number,
+            it->sql_c_type_,
+            bind_ptr,
+            it->element_buffer_size_,
+            it->null_buffer_
+        );
         if (!SQL_SUCCEEDED(status)) {
             return status;
         }
@@ -915,12 +944,17 @@ query_desc::translate_types(bool use_unicode)
     return failed_translations;
 }
 
-/*
-  allocate buffers to execute the query.
-  row_count: initial rows to preallocate for the results
-  chunk_row_count: rows to allocate for "per-chunk" buffers
-
-  returns the number of failed allocations.
+/**
+ * @brief Allocate buffers to execute the query.
+ *
+ * If the number of rows to fetch < 0, buffer_element_count and chunk_element_count are set to
+ * DEFAULT_ROWS_TO_BE_ALLOCATE and DEFAULT_ROWS_TO_BE_FETCHED respectively, and can thus be
+ * different. Otherwise they are the same number.
+ *
+ * @param buffer_element_count Initial rows to preallocate for the results
+ * @param chunk_element_count Rows to allocate for "per-chunk" buffers
+ * @param keep_nulls
+ * @return The number of failed allocations.
  */
 int
 query_desc::allocate_buffers(size_t buffer_element_count, size_t chunk_element_count,
@@ -930,7 +964,8 @@ query_desc::allocate_buffers(size_t buffer_element_count, size_t chunk_element_c
     npy_intp npy_array_count = static_cast<npy_intp>(buffer_element_count);
 
     for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
-        // Allocate the numpy buffer for the result
+        // Allocate the numpy buffer for the result; only one dimension is needed here, and it is
+        // of size npy_array_count.
         PyObject *arr = PyArray_SimpleNewFromDescr(1, &npy_array_count, it->npy_type_descr_);
         if (!arr) {
             // failed to allocate mem_buffer
@@ -1273,6 +1308,8 @@ perform_array_query(query_desc &result, Cursor *cur, npy_intp nrows, bool lower,
             return 0 == RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
         }
 
+
+        // Possibly need to pass element size to SQLBindCol in here?
         rc = result.bind_cols();
         if (!SQL_SUCCEEDED(rc)) {
             return 0 == RaiseErrorFromHandle(cur->cnxn, "ODBC failed when binding columns",
@@ -1422,7 +1459,7 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
 {
     PyObject *numpy = PyImport_ImportModule("numpy");
     if (!numpy) {
-        return 0;
+        return NULL;
     }
     Cursor *cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
     if (!cursor) {
