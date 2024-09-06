@@ -770,9 +770,9 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
             break;
 
-            // decimal -----------------------------------------------------
-            // Note: these are mapped as double as per a request
-            //       this means precision may be lost.
+        // decimal -----------------------------------------------------
+        // Note: these are mapped as double as per a request
+        //       this means precision may be lost.
         case SQL_DECIMAL:
         case SQL_NUMERIC:
             dtype = PyArray_DescrFromType(NPY_DOUBLE);
@@ -783,10 +783,16 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
             break;
 
-            // unsupported types -------------------------------------------
-            // this includes:
-            // blobs:
-            // SQL_BINARY, SQL_VARBINARY, SQL_LONGVARBINARY
+        // unsupported types -------------------------------------------
+        // this includes:
+        // blobs:
+        // SQL_BINARY, SQL_VARBINARY, SQL_LONGVARBINARY
+        case SQL_BINARY:
+            dtype = PyArray_DescrFromType(NPY_STRING);
+            if (dtype != NULL) {
+                MAP_SUCCESS(dtype, SQL_BINARY);
+            }
+
         default:
             break;
     }
