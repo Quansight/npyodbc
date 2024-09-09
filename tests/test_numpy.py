@@ -157,3 +157,51 @@ def test_fetchdictarray_unicode_values(cursor, values):
         assert_array_equal(inserted[key], value)
 
     cleanup(cursor)
+
+
+@pytest.mark.sqlite()
+@pytest.mark.parametrize(
+    ('data_type'),
+    [
+        ('BINARY'),
+        ('VARBINARY'),
+        ('LONGVARBINARY'),
+    ]
+)
+@settings(deadline=500)
+@given(
+    st.lists(
+        st.tuples(
+            st.binary(max_size=30),
+            st.integers(min_value=-(2**32)//2, max_value=(2**32)//2 - 1),
+        ),
+        min_size=1,
+        max_size=100,
+    ),
+)
+def test_fetchdictarray_binary(cursor, data_type, values):
+    """Test that fetchdictarray can retrieve binary, varbinary, and longvarbinary columns."""
+    # Need to specify max element size for binary/varbinary/longvarbinary col
+    elsize = max(len(binary) for binary, val in values)
+
+    cursor.execute('DROP TABLE IF EXISTS t1;')
+    cursor.execute(f'CREATE TABLE t1(a {data_type}({elsize}), b int);')
+
+    for binary, val in values:
+        cursor.execute('INSERT INTO t1 values(?,?);', binary, val)
+
+    cursor.execute('SELECT * from t1;')
+    fda_result = cursor.fetchdictarray()
+
+    cursor.execute('SELECT * from t1;')
+    expected_binary, expected_ints = zip(*cursor.fetchall())
+
+    expected = {
+        'a': np.array(expected_binary),
+        'b': np.array(expected_ints),
+    }
+
+    for col, expected_arr in expected.items():
+        assert_array_equal(fda_result[col], expected_arr)
+
+    cleanup(cursor)

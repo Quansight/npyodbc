@@ -83,8 +83,7 @@ static bool CAN_USE_DATETIME = false;
  * @return String description of that type
  */
 const char *
-sql_type_to_str(SQLSMALLINT type)
-{
+sql_type_to_str(SQLSMALLINT type) {
     switch (type) {
         case SQL_CHAR:
             return "char";
@@ -144,8 +143,7 @@ sql_type_to_str(SQLSMALLINT type)
  * @return String description of that type
  */
 const char *
-sql_c_type_to_str(SQLSMALLINT type)
-{
+sql_c_type_to_str(SQLSMALLINT type) {
     switch (type) {
         case SQL_C_BIT:
             return "bit";
@@ -798,14 +796,17 @@ map_column_desc_types(column_desc &cd, bool unicode)
         case SQL_LONGVARBINARY:
             dtype = PyArray_DescrFromType(NPY_STRING);
             if (dtype != NULL) {
+                // Set the element size for numpy
+                PyDataType_SET_ELSIZE(
+                    dtype,
+                    static_cast<npy_int>(cd.sql_size_)
+                );
+
+                // Set the element size that gets passed to SQLBindCol
+                cd.element_buffer_size_ = dtype->elsize;
                 MAP_SUCCESS(dtype, SQL_BINARY);
             }
 
-            // Set the max number of characters in each element
-            PyDataType_SET_ELSIZE(
-                dtype,
-                static_cast<npy_int>(cd.sql_size_)
-            );
 
 
         default:
@@ -957,9 +958,11 @@ query_desc::translate_types(bool use_unicode)
  * @return The number of failed allocations.
  */
 int
-query_desc::allocate_buffers(size_t buffer_element_count, size_t chunk_element_count,
-                             bool keep_nulls)
-{
+query_desc::allocate_buffers(
+    size_t buffer_element_count,
+    size_t chunk_element_count,
+    bool keep_nulls
+) {
     int alloc_errors = 0;
     npy_intp npy_array_count = static_cast<npy_intp>(buffer_element_count);
 
@@ -1320,7 +1323,7 @@ perform_array_query(query_desc &result, Cursor *cur, npy_intp nrows, bool lower,
         // According to the microsoft sql docs for SQLFetchScroll:
         //
         //    SQL_FETCH_NEXT 	Return the next rowset. This is equivalent to calling
-        //    SQLFetch.
+        //                      SQLFetch.
         //                      SQLFetchScroll ignores the value of FetchOffset.
         //
         // Why is this used here?
