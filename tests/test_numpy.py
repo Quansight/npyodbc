@@ -5,7 +5,7 @@ import hypothesis.strategies as st
 import npyodbc
 import numpy as np
 import pytest
-from hypothesis import given, reject, settings
+from hypothesis import example, given, reject, settings
 from numpy.testing import assert_allclose, assert_array_equal
 
 
@@ -169,6 +169,7 @@ def test_fetchdictarray_unicode_values(cursor, values):
     ]
 )
 @settings(deadline=500)
+@example([(b'', 0)])
 @given(
     st.lists(
         st.tuples(
@@ -203,5 +204,6 @@ def test_fetchdictarray_binary(cursor, data_type, values):
 
     for col, expected_arr in expected.items():
         assert_array_equal(fda_result[col], expected_arr)
+        assert fda_result[col].dtype == np.dtype(f'S{elsize}')
 
     cleanup(cursor)
