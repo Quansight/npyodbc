@@ -13,6 +13,7 @@
 #include <Python.h>
 #include <sqltypes.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <vector>
 
@@ -30,6 +31,8 @@
 #include "errors.h"
 #include "pyodbcmodule.h"
 // clang-format on
+
+#include "npcontainer.h"
 
 // Numpy 2.0 compatibility
 #if NPY_ABI_VERSION < 0x02000000
@@ -643,6 +646,10 @@ map_column_desc_types(column_desc &cd, bool unicode)
     PyArray_Descr *dtype = 0;
     size_t sql_size = cd.sql_size_;
 
+    SQLSMALLINT types[] = {
+        SQL_CHAR, SQL_VARCHAR, SQL_LONGVARCHAR, SQL_GUID, SQL_SS_XML, SQL_BINARY, SQL_VARBINARY, SQL_LONGVARBINARY
+    };
+
     switch (cd.sql_type_) {
             // string types ------------------------------------------------
         case SQL_CHAR:
@@ -804,11 +811,8 @@ map_column_desc_types(column_desc &cd, bool unicode)
 
                 // Set the element size that gets passed to SQLBindCol
                 cd.element_buffer_size_ = dtype->elsize;
-                MAP_SUCCESS(dtype, SQL_BINARY);
+                MAP_SUCCESS(dtype, cd.sql_type_);
             }
-
-
-
         default:
             break;
     }
@@ -851,6 +855,8 @@ query_desc::init_from_statement(SQLHSTMT hstmt)
     cleanup();
 
     hstmt_ = hstmt;
+
+    TableColumnMetadata metadata = TableColumnMetadata(hstmt);
 
     SQLRETURN ret;
     SQLSMALLINT field_count = 0;
@@ -1543,3 +1549,130 @@ char fetchdictarray_doc[] =
         "fetchmany : Fetch rows into a Python list of rows.\n"
         "fetchall : Fetch the remaining rows into a Python list of rows.\n"
         "\n";
+
+ColumnMetadata::ColumnMetadata(
+    SQLHSTMT hstmt,
+    SQLCHAR *name,
+    SQLSMALLINT sql_type,
+    SQLULEN sql_size,
+    SQLSMALLINT sql_decimal,
+    SQLSMALLINT sql_nullable
+) {
+
+    this->sql_name = name;
+    this->sql_type = sql_type;
+    this->sql_size = sql_size;
+    this->sql_decimal = sql_decimal;
+    this->sql_nullable = sql_nullable;
+
+    SQLRETURN retcode = SQLColumns(
+        hstmt,
+        NULL,
+        0,
+        NULL,
+        0,
+        NULL,
+        0,
+        name,
+        std::strlen(reinterpret_cast<char *>(name))
+    );
+
+    if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+        // Bind columns in result set to buffers
+        SQLBindCol(hstmt, 1, SQL_C_CHAR, this->szCatalog, STR_LEN, &this->cbCatalog);
+        SQLBindCol(hstmt, 2, SQL_C_CHAR, this->szSchema, STR_LEN, &this->cbSchema);
+        SQLBindCol(hstmt, 3, SQL_C_CHAR, this->szTableName, STR_LEN, &this->cbTableName);
+        SQLBindCol(hstmt, 4, SQL_C_CHAR, this->szColumnName, STR_LEN, &this->cbColumnName);
+        SQLBindCol(hstmt, 5, SQL_C_SSHORT, &this->DataType, 0, &this->cbDataType);
+        SQLBindCol(hstmt, 6, SQL_C_CHAR, this->szTypeName, STR_LEN, &this->cbTypeName);
+        SQLBindCol(hstmt, 7, SQL_C_SLONG, &this->ColumnSize, 0, &this->cbColumnSize);
+        SQLBindCol(hstmt, 8, SQL_C_SLONG, &this->BufferLength, 0, &this->cbBufferLength);
+        SQLBindCol(hstmt, 9, SQL_C_SSHORT, &this->DecimalDigits, 0, &this->cbDecimalDigits);
+        SQLBindCol(hstmt, 10, SQL_C_SSHORT, &this->NumPrecRadix, 0, &this->cbNumPrecRadix);
+        SQLBindCol(hstmt, 11, SQL_C_SSHORT, &this->Nullable, 0, &this->cbNullable);
+        SQLBindCol(hstmt, 12, SQL_C_CHAR, this->szRemarks, REM_LEN, &this->cbRemarks);
+        SQLBindCol(hstmt, 13, SQL_C_CHAR, this->szColumnDefault, STR_LEN, &this->cbColumnDefault);
+        SQLBindCol(hstmt, 14, SQL_C_SSHORT, &this->SQLDataType, 0, &this->cbSQLDataType);
+        SQLBindCol(hstmt, 15, SQL_C_SSHORT, &this->DatetimeSubtypeCode, 0, &this->cbDatetimeSubtypeCode);
+        SQLBindCol(hstmt, 16, SQL_C_SLONG, &this->CharOctetLength, 0, &this->cbCharOctetLength);
+        SQLBindCol(hstmt, 17, SQL_C_SLONG, &this->OrdinalPosition, 0, &this->cbOrdinalPosition);
+        SQLBindCol(hstmt, 18, SQL_C_CHAR, this->szIsNullable, STR_LEN, &this->cbIsNullable);
+
+        while (SQL_SUCCESS == retcode) {
+            retcode = SQLFetch(hstmt);
+            /*
+            if (retcode == SQL_ERROR || retcode == SQL_SUCCESS_WITH_INFO)
+               0;   // show_error();
+            if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO)
+               0;   // Process fetched data
+            else
+               break;
+           */
+        }
+    }
+}
+
+ColumnMetadata::~ColumnMetadata() {
+    return;
+}
+
+TableColumnMetadata::TableColumnMetadata(SQLHSTMT hstmt, SQLCHAR *table) {
+    SQLSMALLINT ncols = 0;
+    SQLRETURN ret = SQLNumResultCols(hstmt, &ncols);
+    if (!(ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO)) {
+        PyErr_SetString(PyExc_RuntimeError, "Unable to determine number of columns in this query.");
+        return;
+    }
+
+    SQLCHAR sql_name[300];
+    SQLSMALLINT sql_type;
+    SQLULEN sql_size;
+    SQLSMALLINT sql_decimal;
+    SQLSMALLINT sql_nullable;
+
+    for (SQLSMALLINT i = 0; i<ncols; i++) {
+        ret = SQLDescribeCol(
+            hstmt,
+            i+1, // ODBC column numbers start at 1
+            &sql_name[0],
+            _countof(sql_name), // Max column name size is 300
+            NULL,
+            &sql_type,
+            &sql_size, // Maximum string length that can be stored in the column
+            &sql_decimal,
+            &sql_nullable
+        );
+
+        this->columns.push_back(
+            new ColumnMetadata(
+                hstmt,
+                table,
+                sql_name,
+                sql_type,
+                sql_size,
+                sql_decimal,
+                sql_nullable
+            )
+        );
+    }
+}
+
+/**
+ * @brief Return the metadata for the given column.
+ *
+ * @param col Name of the column
+ * @return Metadata for the given column
+ */
+ColumnMetadata TableColumnMetadata::operator[](const char *col) {
+    for (ColumnMetadata *it: this->columns) {
+        if (std::strcmp(reinterpret_cast<char *>(it->sql_name), col) != 0) {
+            return *it;
+        }
+    }
+}
+
+TableColumnMetadata::~TableColumnMetadata() {
+    for (ColumnMetadata *it: this->columns) {
+        delete it;
+    }
+}
