@@ -168,23 +168,18 @@ def test_fetchdictarray_unicode_values(cursor, values):
         ('LONGVARBINARY'),
     ]
 )
-# @settings(deadline=500)
-# @example([(b'\x01', 0)])
-# @given(
-#     st.lists(
-#         st.tuples(
-#             st.binary(max_size=30).filter(lambda x: any(b != 0 for b in x)),
-#             st.integers(min_value=-(2**32)//2, max_value=(2**32)//2 - 1),
-#         ),
-#         min_size=1,
-#         max_size=100,
-#     ),
-# )
-# def test_fetchdictarray_binary(cursor, data_type, values):
-def test_fetchdictarray_binary(cursor, data_type):
-
-    values = [(b'\x01', 0)]
-
+@settings(deadline=500)
+@given(
+    st.lists(
+        st.tuples(
+            st.binary(max_size=30).filter(lambda x: any(b != 0 for b in x)),
+            st.integers(min_value=-(2**32)//2, max_value=(2**32)//2 - 1),
+        ),
+        min_size=1,
+        max_size=100,
+    ),
+)
+def test_fetchdictarray_binary(cursor, data_type, values):
     """Test that fetchdictarray can retrieve binary, varbinary, and longvarbinary columns."""
     # Need to specify max element size for binary/varbinary/longvarbinary col
     elsize = max(len(binary) for binary, val in values)
@@ -200,8 +195,6 @@ def test_fetchdictarray_binary(cursor, data_type):
 
     cursor.execute('SELECT * from t1;')
     expected_binary, expected_ints = zip(*cursor.fetchall())
-
-    breakpoint()
 
     expected = {
         'a': np.array(expected_binary),
