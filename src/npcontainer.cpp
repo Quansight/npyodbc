@@ -1311,8 +1311,6 @@ perform_array_query(query_desc &result, Cursor *cur, npy_intp nrows, bool lower,
             return 0 == RaiseErrorV(0, PyExc_MemoryError, "Can't allocate result buffers");
         }
 
-
-        // Possibly need to pass element size to SQLBindCol in here?
         rc = result.bind_cols();
         if (!SQL_SUCCEEDED(rc)) {
             return 0 == RaiseErrorFromHandle(cur->cnxn, "ODBC failed when binding columns",

@@ -1,9 +1,7 @@
 #ifndef _NPCONTAINER_H_
 #define _NPCONTAINER_H_
 
-#include <cstring>
 #include <Python.h>
-#include <sqltypes.h>
 
 PyObject *Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs);
 
