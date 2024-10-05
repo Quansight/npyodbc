@@ -647,7 +647,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
     size_t sql_size = cd.sql_size_;
 
     switch (cd.sql_type_) {
-            // string types ------------------------------------------------
+        // string types ------------------------------------------------
         case SQL_CHAR:
         case SQL_VARCHAR:
         case SQL_LONGVARCHAR:
@@ -677,7 +677,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
         } break;
 
-            // real types --------------------------------------------------
+        // real types --------------------------------------------------
         case SQL_REAL:
             dtype = PyArray_DescrFromType(NPY_FLOAT);
             if (dtype) {
@@ -697,7 +697,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
             break;
 
-            // integer types -----------------------------------------------
+        // integer types -----------------------------------------------
         case SQL_BIT:
             dtype = PyArray_DescrFromType(NPY_BOOL);
             if (dtype) {
@@ -743,7 +743,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
             }
             break;
 
-            // time related types ------------------------------------------
+        // time related types ------------------------------------------
         case SQL_TYPE_DATE:
             if (CAN_USE_DATETIME) {
                 dtype = dtype_from_string("M8[D]");
