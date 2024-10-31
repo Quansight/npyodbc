@@ -1,3 +1,5 @@
+import binascii
+import re
 import string
 import warnings
 
@@ -5,7 +7,7 @@ import hypothesis.strategies as st
 import npyodbc
 import numpy as np
 import pytest
-from hypothesis import example, given, reject, settings
+from hypothesis import given, reject, settings
 from numpy.testing import assert_allclose, assert_array_equal
 
 
@@ -161,47 +163,52 @@ def test_fetchdictarray_unicode_values(cursor, values):
 
 @pytest.mark.sqlite()
 @pytest.mark.parametrize(
-    ('data_type'),
+    ('sql_type'),
     [
         ('BINARY'),
-        # ('VARBINARY'),
-        # ('LONGVARBINARY'),
+        ('VARBINARY'),
+        ('LONGVARBINARY'),
     ]
 )
-@settings(deadline=500)
-@given(
-    st.lists(
-        st.tuples(
-            st.binary(max_size=30).filter(lambda x: any(b != 0 and b != b'\x01' for b in x)),
-            st.integers(min_value=-(2**32)//2, max_value=(2**32)//2 - 1),
-        ),
-        min_size=1,
-        max_size=100,
-    ),
-)
-def test_fetchdictarray_binary(cursor, data_type, values):
+def test_fetchdictarray_binary(cursor, sql_type):
     """Test that fetchdictarray can retrieve binary, varbinary, and longvarbinary columns."""
-    # Need to specify max element size for binary/varbinary/longvarbinary col
-    elsize = max(len(binary) for binary, val in values)
+    binary = [
+        b"foo",
+        b"bar",
+        b"baz",
+        b"quux",
+    ]
+    ints = [1, 2, 3, 4]
 
+    # Need to specify max element size for binary/varbinary/longvarbinary col. Since this is
+    # sqlite, blobs are stored in hexadecimal format, so the length of the stored data is
+    # not the same as the length of the bytestrings above. Let's just make it 16 bytes, which
+    # is enough to hold the 4 characters in the largest bytestring, plus the extra three
+    # added by sqlite, as explained below.
+    elsize = 16
     cursor.execute('DROP TABLE IF EXISTS t1;')
-    cursor.execute(f'CREATE TABLE t1(a {data_type}({elsize}), b int);')
+    cursor.execute(f'CREATE TABLE t1(a {sql_type}({elsize}), b int);')
 
-    for binary, val in values:
-        cursor.execute('INSERT INTO t1 values(?,?);', binary, val)
-
-    cursor.execute('SELECT * from t1;')
-    fda_result = cursor.fetchdictarray()
+    for bval, ival in zip(binary, ints):
+        cursor.execute('INSERT INTO t1 values(?,?);', bval, ival)
 
     cursor.execute('SELECT * from t1;')
-    expected_binary, expected_ints = zip(*cursor.fetchall())
 
-    expected = {
-        'a': np.array(expected_binary),
-        'b': np.array(expected_ints),
-    }
+    # Cast column 'a' to a null-terminated bytes dtype
+    fda_result = cursor.fetchdictarray(target_dtypes={'a': "S", 'b': 'i8'})
 
-    for col, expected_arr in expected.items():
-        assert_array_equal(fda_result[col], expected_arr)
+    # Convert the array element to bytes. In sqlite, data is stored in hexadecimal format,
+    # e.g. b'foo' -> 666F6F. Additionally it gets enclosed with an X'<value>' to signify that
+    # the data is in hexadecimal format, and since we requested 16-element binary columns,
+    # the hex representation also gets padded out with a bunch of null bytes to fill
+    # any extra space:
+    # | Python     |   hex representation    |   sqlite database entry   |
+    # | b'foo'     |   666F6F                |   "X'666F6F'\x00"         |
+    for bval, fda_val in zip(binary, fda_result['a']):
+        match = re.match(b"X'(?P<hexval>([0-9A-F]{2})+)'(\x00)*?", fda_val.tobytes())
+        if match:
+            assert binascii.unhexlify(match.group('hexval')) == bval
+        else:
+            pytest.fail("Failed to extract hexadecimal bytestring from sqlite BLOB data.")
 
     cleanup(cursor)
