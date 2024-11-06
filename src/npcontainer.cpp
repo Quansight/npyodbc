@@ -692,7 +692,8 @@ unicode_dtype(size_t length)
  *
  * @param cd Column descriptor containing data about the column
  * @param unicode If true, string types are all treated as unicode (they use the SQL_C_WCHAR type)
- * @param descr dtype descriptor to use for the column; must not be NULL
+ * @param descr dtype descriptor to use for the column; must not be NULL. Steals a reference
+ * to descr, as it gets stored on column_desc
  * @return 0 if successful, nonzero otherwise
  */
 int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr) {
@@ -1057,72 +1058,73 @@ query_desc::lowercase_fields()
 int
 query_desc::translate_types(bool use_unicode, PyObject *target_dtypes, int &unsupported_fields)
 {
-    for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
+    if (target_dtypes == NULL) {
+        for (auto &column: this->columns_) {
+            unsupported_fields += map_column_desc_types(column, use_unicode);
+        }
+    } else {
+        if (!PyDict_Check(target_dtypes)) {
+            PyErr_SetString(
+                PyExc_ValueError,
+                "target_dtypes must be a dictionary of {column name: dtype}"
+            );
+            return -1;
+        }
+
         PyArray_Descr *descr = NULL;
 
-        if (target_dtypes == NULL) {
-            unsupported_fields += map_column_desc_types(*it, use_unicode);
-        } else {
-            if (!PyDict_Check(target_dtypes)) {
-                PyErr_SetString(
-                    PyExc_ValueError,
-                    "target_dtypes must be a dictionary of {column name: dtype}"
-                );
-                return -1;
-            }
-
+        for (auto &column: this->columns_) {
             PyObject *target_dtype = PyDict_GetItemString(
                 target_dtypes,
-                reinterpret_cast<const char *>(it->sql_name_)
+                reinterpret_cast<const char *>(column.sql_name_)
             );
             if (target_dtype == NULL) {
-                PyErr_Format(
-                    PyExc_ValueError,
-                    "Error getting the requested dtype for column %s",
-                    it->sql_name_
-                );
-                return -1;
-            }
+                unsupported_fields += map_column_desc_types(column, use_unicode);
+            } else {
+                int conversion_result = PyArray_DescrConverter(target_dtype, &descr);
 
-            if (PyArray_DescrConverter(target_dtype, &descr) < 0) {
+                // Sometimes PyArray_DescrConverter returns < 0 to indicate errors, other
+                // times it doesn't but descr == NULL. In either case, we need to do error handling.
+                if (conversion_result < 0 || descr == NULL) {
+                    // Get the string representation of the requested dtype
+                    PyObject *target_dtype_str = PyObject_Str(target_dtype);
+                    if (target_dtype_str == NULL) {
+                        PyErr_Format(
+                            PyExc_TypeError,
+                            "Invalid dtype for column '%s'; cannot print dtype due to error calling __str__.",
+                            column.sql_name_
+                        );
+                        Py_XDECREF(descr);
+                        return -1;
+                    }
 
-                // Get the string representation of the requested dtype
-                PyObject *target_dtype_str = PyObject_Str(target_dtype);
-                if (target_dtype_str == NULL) {
+                    // Convert the python string to a unicode const char *
+                    const char *str = PyUnicode_AsUTF8(target_dtype);
+                    if (str == NULL) {
+                        PyErr_Format(
+                            PyExc_TypeError,
+                            "Invalid dtype for column '%s'; error getting the unicode representation of str(<requested dtype>)",
+                            column.sql_name_
+                        );
+                        Py_DECREF(target_dtype_str);
+                        Py_XDECREF(descr);
+                        return -1;
+                    }
+
+                    // Print the error string
                     PyErr_Format(
                         PyExc_TypeError,
-                        "Invalid dtype for column '%s'; cannot print dtype due to error calling __str__.",
-                        it->sql_name_
-                    );
-                    Py_XDECREF(descr);
-                    return -1;
-                }
-
-                // Convert the python string to a unicode const char *
-                const char *str = PyUnicode_AsUTF8(target_dtype);
-                if (str == NULL) {
-                    PyErr_Format(
-                        PyExc_TypeError,
-                        "Invalid dtype for column '%s'; error getting the unicode representation of str(<requested dtype>)",
-                        it->sql_name_
+                        "Invalid dtype '%s' for column '%s'",
+                        str,
+                        column.sql_name_
                     );
                     Py_DECREF(target_dtype_str);
                     Py_XDECREF(descr);
                     return -1;
                 }
-
-                // Print the error string
-                PyErr_Format(
-                    PyExc_TypeError,
-                    "Invalid dtype '%s' for column '%s'",
-                    str,
-                    it->sql_name_
-                );
-                Py_DECREF(target_dtype_str);
-                Py_XDECREF(descr);
-                return -1;
+                // coerce_column_desc_types takes ownership of descr; no Py_DECREF needed
+                unsupported_fields += coerce_column_desc_types(column, use_unicode, descr);
             }
-            unsupported_fields += coerce_column_desc_types(*it, use_unicode, descr);
         }
     }
     return 0;

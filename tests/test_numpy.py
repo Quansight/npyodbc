@@ -79,7 +79,7 @@ def test_cursor_fetchdictarray_method_exists():
 @pytest.mark.parametrize(
     ("target_dtypes"),
     [
-        # {'a': 'U', 'b': 'i8', 'c': 'f8'},
+        {'a': 'U', 'b': 'i8', 'c': 'f8'},
         {},
     ]
 )
@@ -93,7 +93,6 @@ def test_fetchdictarray(cursor, target_dtypes, values):
       which is the range covered by a double precision (64-bit) float. If you try to
       store values larger than this in a REAL column, it gets converted to +/- inf.
     """
-    print(values)
     cursor.execute('DROP TABLE IF EXISTS t1;')
     cursor.execute('CREATE TABLE t1(a text, b int, c real);')
 
@@ -157,7 +156,6 @@ def test_fetchdictarray_unicode(cursor, target_dtypes):
 )
 def test_fetchdictarray_unicode_values(cursor, target_dtypes, values):
     """Test that fetchdictarray correctly handles arrays of unicode strings."""
-    print(target_dtypes, values)
     cursor.execute('DROP TABLE IF EXISTS t1;')
     cursor.execute('CREATE TABLE t1(a text, b int);')
 
