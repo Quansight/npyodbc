@@ -316,18 +316,12 @@ convert_timestruct_to_timedelta(const TIME_STRUCT *dts)
 int
 fill_NAvalue(void *value, PyArray_Descr *dtype)
 {
-    int nptype = dtype->type_num;
-    int elsize = dtype->elsize;
-    switch (nptype) {
+    switch (dtype->type_num) {
         case NPY_BOOL:
             ((npy_bool *)value)[0] = 0;  // XXX False is a good default?
             break;
         case NPY_INT8:
             ((npy_int8 *)value)[0] = NPY_MIN_INT8;
-            break;
-        case NPY_UINT8:
-            // For uint8 use max, as 0 is more likely to be valid data.
-            ((npy_uint8 *)value)[0] = NPY_MAX_UINT8;
             break;
         case NPY_INT16:
             ((npy_int16 *)value)[0] = NPY_MIN_INT16;
@@ -338,15 +332,37 @@ fill_NAvalue(void *value, PyArray_Descr *dtype)
         case NPY_INT64:
             ((npy_int64 *)value)[0] = NPY_MIN_INT64;
             break;
-        case NPY_FLOAT:
-            ((npy_float *)value)[0] = NPY_NANF;
+        case NPY_UINT8:
+            // For uint use max, as 0 is more likely to be valid data.
+            ((npy_uint8 *)value)[0] = NPY_MAX_UINT8;
             break;
-        case NPY_DOUBLE:
-            ((npy_double *)value)[0] = NPY_NAN;
+        case NPY_UINT16:
+            // For uint use max, as 0 is more likely to be valid data.
+            ((npy_uint16 *)value)[0] = NPY_MAX_UINT16;
+            break;
+        case NPY_UINT32:
+            // For uint use max, as 0 is more likely to be valid data.
+            ((npy_uint32 *)value)[0] = NPY_MAX_UINT32;
+            break;
+        case NPY_UINT64:
+            // For uint use max, as 0 is more likely to be valid data.
+            ((npy_uint64 *)value)[0] = NPY_MAX_UINT64;
+            break;
+        case NPY_FLOAT16:
+            ((npy_float16 *)value)[0] = NPY_NANF;
+            break;
+        case NPY_FLOAT32:
+            ((npy_float32 *)value)[0] = NPY_NANF;
+            break;
+        case NPY_FLOAT64:
+            ((npy_float64 *)value)[0] = NPY_NANL;
+            break;
+        case NPY_FLOAT128:
+            ((npy_float128 *)value)[0] = NPY_NANL;
             break;
         case NPY_STRING:
         case NPY_UNICODE:
-            memset(value, 0, static_cast<size_t>(elsize));
+            memset(value, 0, static_cast<size_t>(dtype->elsize));
             break;
         case NPY_DATETIME:
             ((npy_int64 *)value)[0] = NPY_DATETIME_NAT;
@@ -354,6 +370,10 @@ fill_NAvalue(void *value, PyArray_Descr *dtype)
         case NPY_TIMEDELTA:
             ((npy_int64 *)value)[0] = NPY_DATETIME_NAT;
             break;
+        case NPY_COMPLEX64:
+        case NPY_COMPLEX128:
+        case NPY_COMPLEX256:
+        case NPY_OBJECT:
         default:
             PyObject *typestr = PyObject_Str((PyObject *)dtype->typeobj);
 
@@ -677,6 +697,7 @@ unicode_dtype(size_t length)
  */
 int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr) {
     cd.npy_type_descr_ = descr;
+    Py_INCREF(descr);
 
     switch (descr->type_num) {
         case NPY_STRING:
@@ -916,7 +937,7 @@ struct query_desc {
     SQLRETURN bind_cols();
 
     void lowercase_fields();
-    int translate_types(bool use_unicode, PyObject *target_dtype);
+    int translate_types(bool use_unicode, PyObject *target_dtype, int &unsupported_fields);
     int ensure();
     int convert(size_t read);
     void advance(size_t read);
@@ -1030,31 +1051,81 @@ query_desc::lowercase_fields()
  *
  * @param use_unicode If true, unicode is assumed and all character-like types are treated as unicode
  * @param target_dtypes A python dictionary of {column name: numpy dtype}
- * @return A count with the number of failed translations
+ * @param unsupported_fields An integer which will be written with the number of unsupported columns
+ * @return 0 if successful, -1 if an error occurred; the Python error indicator will be set
  */
 int
-query_desc::translate_types(bool use_unicode, PyObject *target_dtypes)
+query_desc::translate_types(bool use_unicode, PyObject *target_dtypes, int &unsupported_fields)
 {
-    int failed_translations = 0;
     for (std::vector<column_desc>::iterator it = columns_.begin(); it < columns_.end(); ++it) {
         PyArray_Descr *descr = NULL;
 
-        // Borrowed ref; no need to increment
-        PyObject *target_dtype_ref = PyDict_GetItemString(
-            target_dtypes,
-            reinterpret_cast<const char *>(it->sql_name_)
-        );
-        if (target_dtype_ref != NULL) {
-            if (PyArray_DescrConverter(target_dtype_ref, &descr) < 0 || descr == NULL) {
-                PyErr_SetString(PyExc_RuntimeError, "Error translating SQL types to target dtypes");
+        if (target_dtypes == NULL) {
+            unsupported_fields += map_column_desc_types(*it, use_unicode);
+        } else {
+            if (!PyDict_Check(target_dtypes)) {
+                PyErr_SetString(
+                    PyExc_ValueError,
+                    "target_dtypes must be a dictionary of {column name: dtype}"
+                );
                 return -1;
             }
-            failed_translations += coerce_column_desc_types(*it, use_unicode, descr);
-        } else {
-            failed_translations += map_column_desc_types(*it, use_unicode);
+
+            PyObject *target_dtype = PyDict_GetItemString(
+                target_dtypes,
+                reinterpret_cast<const char *>(it->sql_name_)
+            );
+            if (target_dtype == NULL) {
+                PyErr_Format(
+                    PyExc_ValueError,
+                    "Error getting the requested dtype for column %s",
+                    it->sql_name_
+                );
+                return -1;
+            }
+
+            if (PyArray_DescrConverter(target_dtype, &descr) < 0) {
+
+                // Get the string representation of the requested dtype
+                PyObject *target_dtype_str = PyObject_Str(target_dtype);
+                if (target_dtype_str == NULL) {
+                    PyErr_Format(
+                        PyExc_TypeError,
+                        "Invalid dtype for column '%s'; cannot print dtype due to error calling __str__.",
+                        it->sql_name_
+                    );
+                    Py_XDECREF(descr);
+                    return -1;
+                }
+
+                // Convert the python string to a unicode const char *
+                const char *str = PyUnicode_AsUTF8(target_dtype);
+                if (str == NULL) {
+                    PyErr_Format(
+                        PyExc_TypeError,
+                        "Invalid dtype for column '%s'; error getting the unicode representation of str(<requested dtype>)",
+                        it->sql_name_
+                    );
+                    Py_DECREF(target_dtype_str);
+                    Py_XDECREF(descr);
+                    return -1;
+                }
+
+                // Print the error string
+                PyErr_Format(
+                    PyExc_TypeError,
+                    "Invalid dtype '%s' for column '%s'",
+                    str,
+                    it->sql_name_
+                );
+                Py_DECREF(target_dtype_str);
+                Py_XDECREF(descr);
+                return -1;
+            }
+            unsupported_fields += coerce_column_desc_types(*it, use_unicode, descr);
         }
     }
-    return failed_translations;
+    return 0;
 }
 
 /**
@@ -1416,8 +1487,11 @@ perform_array_query(query_desc &result, Cursor *cur, npy_intp nrows, bool lower,
         result.lowercase_fields();
     }
 
-    int unsupported_fields = result.translate_types(use_unicode, target_dtypes);
-    if (unsupported_fields) {
+    int unsupported_fields = 0;
+    if (result.translate_types(use_unicode, target_dtypes, unsupported_fields) < 0) {
+        return -1;
+    }
+    if (unsupported_fields > 0) {
         // TODO: add better diagnosis, pointing out the fields and
         // their types in a human readable form.
         return 0 == raise_unsupported_types_exception(unsupported_fields, result);
@@ -1605,10 +1679,7 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
     Py_ssize_t nrows = -1;
     bool return_nulls = false;
     const char *null_suffix = "_isnull";
-    PyObject *target_dtypes = PyDict_New();
-    if (target_dtypes == NULL) {
-        return PyErr_NoMemory();
-    }
+    PyObject *target_dtypes = NULL;
 
     if (
         !PyArg_ParseTupleAndKeywords(
@@ -1623,7 +1694,6 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
         )
     ) {
         Py_DECREF(numpy);
-        Py_DECREF(target_dtypes);
         return NULL;
     }
 
@@ -1633,9 +1703,9 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
         CAN_USE_DATETIME = true;
     }
 
-    Py_DECREF(target_dtypes);
+    PyObject *dictarr = create_fill_dictarray(cursor, nrows, return_nulls ? null_suffix : 0, target_dtypes);
     Py_DECREF(numpy);
-    return create_fill_dictarray(cursor, nrows, return_nulls ? null_suffix : 0, target_dtypes);
+    return dictarr;
 }
 
 char fetchdictarray_doc[] =
@@ -1657,6 +1727,10 @@ char fetchdictarray_doc[] =
         "    If True, information about null values will be included adding a\n"
         "    boolean array using as key a string  built by concatenating the\n"
         "    column name and null_suffix.\n"
+        "target_dtypes : dict, optional\n"
+        "    If provided, this mapping between {column name: dtype} coerces \n"
+        "    the values read from the database into arrays of the requested\n"
+        "    dtypes.\n"
         "null_suffix : string, optional\n"
         "    A string used as a suffix when building the key for null values.\n"
         "    Only used if return_nulls is True.\n"
