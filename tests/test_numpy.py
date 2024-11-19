@@ -1,7 +1,6 @@
-import binascii
-import re
 import string
 import warnings
+from typing import Optional
 
 import hypothesis.strategies as st
 import npyodbc
@@ -39,7 +38,7 @@ def cleanup(cursor: npyodbc.Cursor):
     assert len(cursor.execute('SELECT tbl_name FROM sqlite_schema;').fetchall()) == 0
 
 
-def assert_result_close(a: np.ndarray, b: np.ndarray):
+def assert_result_close(a: np.ndarray, b: np.ndarray, dtype: Optional[np.dtype] = None):
     """Assert that a is close to b.
 
     If a is a float dtype, use assert_allclose; otherwise we check for exact equality.
@@ -50,9 +49,14 @@ def assert_result_close(a: np.ndarray, b: np.ndarray):
         An array to check
     b : np.ndarray
         An array to check
+    dtype : Optional[np.dtype]
+        Dtype of the arrays; used to provide relative tolerance, if provided
     """
     if a.dtype.kind == np.dtype(float).kind:
-        assert_allclose(a, b)
+        if dtype is not None:
+            assert_allclose(a, b, atol=np.finfo(dtype).resolution)
+        else:
+            assert_allclose(a, b)
     else:
         assert_array_equal(a, b)
 
@@ -104,8 +108,8 @@ def test_fetchdictarray(cursor, target_dtypes, values):
     )
 
     expected = {col[0]: np.array(arr) for col, arr in zip(cursor.description, zip(*values))}
-    for key, value in expected.items():
-        assert_result_close(inserted[key], value)
+    for col, value in expected.items():
+        assert_result_close(inserted[col], value, target_dtypes.get(col))
 
     cleanup(cursor)
 
@@ -206,12 +210,8 @@ def test_fetchdictarray_binary(cursor, sql_type):
     ]
     ints = [1, 2, 3, 4]
 
-    # Need to specify max element size for binary/varbinary/longvarbinary col. Since this is
-    # sqlite, blobs are stored in hexadecimal format, so the length of the stored data is
-    # not the same as the length of the bytestrings above. Let's just make it 16 bytes, which
-    # is enough to hold the 4 characters in the largest bytestring, plus the extra three
-    # added by sqlite, as explained below.
-    elsize = 16
+    # Need to specify max element size for binary/varbinary/longvarbinary col.
+    elsize = 4
     cursor.execute('DROP TABLE IF EXISTS t1;')
     cursor.execute(f'CREATE TABLE t1(a {sql_type}({elsize}), b int);')
 
@@ -223,19 +223,12 @@ def test_fetchdictarray_binary(cursor, sql_type):
     # Cast column 'a' to a null-terminated bytes dtype
     fda_result = cursor.fetchdictarray(target_dtypes={'a': "S", 'b': 'i8'})
 
-    # Convert the array element to bytes. In sqlite, data is stored in hexadecimal format,
-    # e.g. b'foo' -> 666F6F. Additionally it gets enclosed with an X'<value>' to signify that
-    # the data is in hexadecimal format, and since we requested 16-element binary columns,
-    # the hex representation also gets padded out with a bunch of null bytes to fill
-    # any extra space:
-    # | Python     |   hex representation    |   sqlite database entry   |
-    # | b'foo'     |   666F6F                |   "X'666F6F'\x00"         |
-    for bval, fda_val in zip(binary, fda_result['a']):
-        match = re.match(b"X'(?P<hexval>([0-9A-F]{2})+)'(\x00)*?", fda_val.tobytes())
-        if match:
-            assert binascii.unhexlify(match.group('hexval')) == bval
-        else:
-            pytest.fail("Failed to extract hexadecimal bytestring from sqlite BLOB data.")
+    assert_result_close(
+        fda_result['a'], np.array(binary, dtype='S4')
+    )
+    assert_result_close(
+        fda_result['b'], np.array(ints, dtype='i8')
+    )
 
     cleanup(cursor)
 
@@ -290,5 +283,69 @@ def test_fetchdictarray_binary_bad_type_coercion(cursor, sql_type, dtype):
     # Cast column 'a' to the requested dtype
     with pytest.raises((SystemError, TypeError)):
         cursor.fetchdictarray(target_dtypes={'a': dtype, 'b': 'i8'})
+
+    cleanup(cursor)
+
+
+
+@pytest.mark.sqlite
+@settings(deadline=None)
+@given(
+    st.lists(
+        st.tuples(
+            st.integers(min_value=np.iinfo('i1').min, max_value=np.iinfo('i1').max),
+            st.floats(allow_nan=False, allow_infinity=False, min_value=np.finfo('f8').min, max_value=np.finfo('f8').max),
+        ),
+        min_size=1,
+        max_size=100,
+    )
+)
+@pytest.mark.parametrize(
+    ("int_dtype"),
+    [
+        'i1',
+        'i2',
+        'i4',
+        'i8',
+    ]
+)
+@pytest.mark.parametrize(
+    ("float_dtype"),
+    [
+        'f8', # sqlite only stores 8-byte floating point numbers in REAL format
+    ]
+)
+def test_fetchdictarray_coercion(cursor, int_dtype, float_dtype, values):
+    """Test that fetchdictarray returns the expected values from the database when coerced.
+
+    - Integers are restricted to the 8-bit range [-128, 127], which is what fits
+      in all int_dtypes.
+    - Floats are restricted to non-nan, non-inf values in the 8-byte range
+    """
+    cursor.execute('DROP TABLE IF EXISTS t1;')
+    cursor.execute('CREATE TABLE t1(a int, b real);')
+
+    rounded = []
+    ints = []
+    for (intval, floatval) in values:
+        rounded_float = np.round(
+            floatval, decimals=np.finfo(float_dtype).precision
+        )
+
+        ints.append(intval)
+        rounded.append(rounded_float)
+        cursor.execute("INSERT INTO t1 values(?,?);", intval, rounded_float)
+
+    inserted = cursor.execute('SELECT * from t1;').fetchdictarray(
+        target_dtypes={'a': int_dtype, 'b': float_dtype}
+    )
+
+    assert_array_equal(
+        np.array(ints), inserted['a']
+    )
+
+    assert_result_close(
+        np.array(rounded), inserted['b'], dtype=float_dtype
+    )
 
     cleanup(cursor)
