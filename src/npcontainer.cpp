@@ -690,6 +690,9 @@ unicode_dtype(size_t length)
 /**
  * @brief Coerce the column to the given dtype, without considering how the database stores the data.
  *
+ * See the table at https://learn.microsoft.com/en-us/sql/odbc/reference/appendixes/c-data-types?view=sql-server-ver16
+ * and compare to https://numpy.org/doc/stable/user/basics.types.html
+ *
  * @param cd Column descriptor containing data about the column
  * @param unicode If true, string types are all treated as unicode (they use the SQL_C_WCHAR type)
  * @param descr dtype descriptor to use for the column; must not be NULL. Steals a reference
@@ -702,7 +705,7 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
 
     switch (descr->type_num) {
         case NPY_STRING:
-            cd.sql_c_type_ = SQL_C_CHAR;
+            cd.sql_c_type_ = SQL_C_BINARY;
             PyDataType_SET_ELSIZE(
                 descr,
                 static_cast<npy_int>(cd.sql_size_)
@@ -717,28 +720,34 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
             );
             cd.element_buffer_size_ = descr->elsize;
             break;
-        case NPY_BYTE:
-        case NPY_UBYTE:
-            cd.sql_c_type_ = SQL_C_BINARY;
+        case NPY_INT8:
+            cd.sql_c_type_ = SQL_C_STINYINT;
             break;
-        case NPY_SHORT:
-        case NPY_USHORT:
-        case NPY_INT:
-        case NPY_UINT:
-        case NPY_LONG:
-        case NPY_ULONG:
-        case NPY_LONGLONG:
-        case NPY_ULONGLONG:
+        case NPY_INT16:
+            cd.sql_c_type_ = SQL_C_SSHORT;
+            break;
+        case NPY_INT32:
+            cd.sql_c_type_ = SQL_C_SLONG;
+            break;
+        case NPY_INT64:
             cd.sql_c_type_ = SQL_C_SBIGINT;
+            break;
+        case NPY_UINT8:
+            cd.sql_c_type_ = SQL_C_UTINYINT;
+            break;
+        case NPY_UINT16:
+            cd.sql_c_type_ = SQL_C_USHORT;
+            break;
+        case NPY_UINT32:
+            cd.sql_c_type_ = SQL_C_ULONG;
+            break;
+        case NPY_UINT64:
+            cd.sql_c_type_ = SQL_C_UBIGINT;
             break;
         case NPY_FLOAT:
             cd.sql_c_type_ = SQL_C_FLOAT;
             break;
         case NPY_DOUBLE:
-        case NPY_LONGDOUBLE:
-        case NPY_CFLOAT:
-        case NPY_CDOUBLE:
-        case NPY_CLONGDOUBLE:
             cd.sql_c_type_ = SQL_C_DOUBLE;
             break;
         default:
