@@ -29,7 +29,14 @@ npyodbc_sources = [
   'src/npyodbcmodule.cpp'
 ]
 
-add_project_arguments('-DPYODBC_VERSION=' + meson.project_version(), language: 'cpp')
+add_project_arguments(
+  [
+    '-DPYODBC_VERSION=' + meson.project_version(),
+    '-Wno-write-strings',
+    '-Wno-deprecated-declarations',
+  ],
+  language: 'cpp'
+)
 
 # Build the npyodbc module
 python.extension_module(
@@ -44,4 +51,6 @@ python.extension_module(
   ],
   include_directories : [npyodbc_inc],
   install : true,
+  cpp_args : run_command(['odbc_config', '--cflags'], check : true).stdout().strip(),
+  link_args : run_command(['odbc_config', '--libs'], check : true).stdout().strip(),
 )
