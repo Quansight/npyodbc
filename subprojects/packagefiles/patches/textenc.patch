@@ -5,6 +5,6 @@
  #define _TEXTENC_H
 +
 +#include "wrapper.h"
- 
+
  enum {
      BYTEORDER_LE = -1,
