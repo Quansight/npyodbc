@@ -38,6 +38,15 @@ add_project_arguments(
   language: 'cpp'
 )
 
+odbc_config = find_program('odbc_config', required : false)
+
+odbc_cflags = []
+odbc_lflags = []
+if odbc_config.found()
+  odbc_cflags = run_command([odbc_config, '--cflags'], check : true).stdout().strip()
+  odbc_lflags = run_command([odbc_config, '--libs'], check : true).stdout().strip()
+endif
+
 # Build the npyodbc module
 python.extension_module(
   'npyodbc',
@@ -51,6 +60,6 @@ python.extension_module(
   ],
   include_directories : [npyodbc_inc],
   install : true,
-  cpp_args : run_command(['odbc_config', '--cflags'], check : true).stdout().strip(),
-  link_args : run_command(['odbc_config', '--libs'], check : true).stdout().strip(),
+  cpp_args : odbc_cflags,
+  link_args : odbc_lflags,
 )
