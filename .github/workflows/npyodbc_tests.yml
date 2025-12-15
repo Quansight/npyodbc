@@ -38,5 +38,5 @@ jobs:
           pip install 'numpy<2'
 
           # Ensure we are testing with npyodbc compiled against numpy>2
-          python -c 'import npyodbc; assert hex(npyodbc.numpy_abi_version) == "0x2000000"'
+          python -c 'import npyodbc; assert npyodbc.numpy_abi_version >= 0x2000000'
           pytest tests/test_numpy.py
