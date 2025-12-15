@@ -8,6 +8,8 @@
 #include "connection.h"
 #include "cursor.h"
 
+
+
 PyObject *Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs);
 
 extern char fetchdictarray_doc[];

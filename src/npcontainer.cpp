@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <unicode/unistr.h>
 #include <unicode/ucnv.h>
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#define NPY_NO_DEPRECATED_API NPY_1_25_API_VERSION
 
 #include <Python.h>
 #include <sqltypes.h>
@@ -17,8 +17,10 @@
 
 #include <vector>
 
-#include "numpy/arrayobject.h"
+#include "numpy/ndarrayobject.h"
 #include "numpy/npy_math.h"
+#include "numpy/npy_2_compat.h"
+#include "numpy/numpyconfig.h"
 
 // clang-format off
 // Keep ordering of these - the pyodbc headers
@@ -35,15 +37,6 @@
 // clang-format on
 
 #include "npcontainer.h"
-
-// Numpy 2.0 compatibility
-#if NPY_ABI_VERSION < 0x02000000
-  static inline void
-    PyDataType_SET_ELSIZE(PyArray_Descr *dtype, npy_intp size)
-    {
-        dtype->elsize = size;
-    }
-#endif
 
 /* controls the maximum text field width, a negative value indicates that the
    text size limit will be dynamic based on the sql type, e.g. varchar (4000) */
@@ -364,7 +357,7 @@ fill_NAvalue(void *value, PyArray_Descr *dtype)
             break;
         case NPY_STRING:
         case NPY_UNICODE:
-            memset(value, 0, static_cast<size_t>(dtype->elsize));
+            memset(value, 0, static_cast<size_t>(PyDataType_ELSIZE(dtype)));
             break;
         case NPY_DATETIME:
             ((npy_int64 *)value)[0] = NPY_DATETIME_NAT;
@@ -674,7 +667,7 @@ string_dtype(size_t length)
 {
     PyArray_Descr *result = PyArray_DescrNewFromType(NPY_STRING);
     if (result) {
-        result->elsize = static_cast<int>(length + 1) * sizeof(char);
+        PyDataType_SET_ELSIZE(result, static_cast<int>(length + 1) * sizeof(char));
     }
     return result;
 }
@@ -684,7 +677,7 @@ unicode_dtype(size_t length)
 {
     PyArray_Descr *result = PyArray_DescrNewFromType(NPY_UNICODE);
     if (result) {
-        result->elsize = static_cast<int>(length + 1) * sizeof(npy_ucs4);
+        PyDataType_SET_ELSIZE(result, static_cast<int>(length + 1) * sizeof(npy_ucs4));
     }
     return result;
 }
@@ -712,7 +705,7 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
                 descr,
                 static_cast<npy_int>(cd.sql_size_)
             );
-            cd.element_buffer_size_ = descr->elsize;
+            cd.element_buffer_size_ = PyDataType_ELSIZE(descr);
             break;
         case NPY_UNICODE:
             cd.sql_c_type_ = SQL_C_WCHAR;
@@ -720,7 +713,7 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
                 descr,
                 static_cast<npy_int>(cd.sql_size_)
             );
-            cd.element_buffer_size_ = descr->elsize;
+            cd.element_buffer_size_ = PyDataType_ELSIZE(descr);
             break;
         case NPY_INT8:
             cd.sql_c_type_ = SQL_C_STINYINT;
@@ -782,7 +775,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
             if (!unicode) {
                 dtype = string_dtype(limit_text_size(sql_size));
                 if (dtype) {
-                    cd.element_buffer_size_ = dtype->elsize;
+                    cd.element_buffer_size_ = PyDataType_ELSIZE(dtype);
                     cd.npy_type_descr_ = dtype;
                     cd.sql_c_type_ = SQL_C_CHAR;
                     return 0;
@@ -796,7 +789,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
         case SQL_WLONGVARCHAR: {
             dtype = unicode_dtype(limit_text_size(sql_size));
             if (dtype) {
-                cd.element_buffer_size_ = dtype->elsize;
+                cd.element_buffer_size_ = PyDataType_ELSIZE(dtype);
                 cd.npy_type_descr_ = dtype;
                 cd.sql_c_type_ = SQL_C_WCHAR;
                 return 0;
@@ -932,7 +925,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
                 );
 
                 // Set the element size that gets passed to SQLBindCol
-                cd.element_buffer_size_ = dtype->elsize;
+                cd.element_buffer_size_ = PyDataType_ELSIZE(dtype);
                 cd.npy_type_descr_ = dtype;
                 cd.sql_c_type_ = SQL_C_BINARY;
                 return 0;
