@@ -19,8 +19,22 @@
 
 #include "numpy/ndarrayobject.h"
 #include "numpy/npy_math.h"
-#include "numpy/npy_2_compat.h"
 #include "numpy/numpyconfig.h"
+
+#if NPY_ABI_VERSION >= 0x02000000
+// If we compile with numpy>=2, include npy_2_compat.h which allows running against numpy<2
+#include "numpy/npy_2_compat.h"
+#else
+// If we compile with numpy<2, we need to define these ourselves
+static inline void
+PyDataType_SET_ELSIZE(PyArray_Descr *dtype, npy_intp size) {
+    dtype->elsize = size;
+}
+static inline npy_intp
+PyDataType_ELSIZE(PyArray_Descr *dtype) {
+    return dtype->elsize;
+}
+#endif
 
 // clang-format off
 // Keep ordering of these - the pyodbc headers
