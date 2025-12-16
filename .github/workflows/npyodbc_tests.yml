@@ -6,7 +6,7 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
-        numpy-version: ['latest', '1.26.4']
+        numpy-version: ['latest', '<2']
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -19,18 +19,24 @@ jobs:
           sudo apt update
           sudo apt install -y sqlite3 unixodbc-dev libsqliteodbc
 
-      - name: Install npyodbc
-        run: |
-          pip install .[test]
-
-      - name: Install target numpy version
+      - name: Install target numpy version to compile against
         if: matrix.numpy-version != 'latest'
         run: |
-          set -xe
-          pip install numpy==${{ matrix.numpy-version }}
-          pip list
+          pip install 'numpy<2'
 
-      - name: Run Numpy Tests
+      - name: Install npyodbc
         run: |
-          set -xe
-          pytest -vv tests/test_numpy.py
+          pip install '.[test]'
+
+      - name: Run Numpy tests against compilation version
+        run: |
+          pytest tests/test_numpy.py
+
+      - name: When compiled with numpy>=2, also run tests against numpy<2
+        if: matrix.numpy-version == 'latest'
+        run: |
+          pip install 'numpy<2'
+
+          # Ensure we are testing with npyodbc compiled against numpy>=2
+          python -c 'import npyodbc; assert npyodbc.numpy_abi_version >= 0x2000000'
+          pytest tests/test_numpy.py

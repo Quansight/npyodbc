@@ -1,8 +1,10 @@
 #include <Python.h>
+#include "numpy/numpyconfig.h"
 #include <sql.h>
 #include <sqlext.h>
 
 #include "methodobject.h"
+#include "modsupport.h"
 #include "pyodbc.h"
 #include "wrapper.h"
 #include "textenc.h"
@@ -28,6 +30,13 @@ PyInit_npyodbc(void)
         PyErr_SetString(PyExc_ImportError, "Error initializing pyodbc.");
         return NULL;
     }
+
+    // Add the numpy ABI version this package was compiled against
+    PyModule_AddIntConstant(
+        pModule,
+        "numpy_abi_version",
+        NPY_VERSION
+    );
 
     return pModule;
 }

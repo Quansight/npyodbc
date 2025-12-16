@@ -1,12 +1,12 @@
 [build-system]
 build-backend = "mesonpy"
-requires = ["meson-python", "numpy>=1.26.2,<2", "setuptools_scm"]
+requires = ["meson-python", "numpy>=1.26.2", "setuptools_scm"]
 
 [project]
 authors = [{name = "Quansight", email = "connect@quansight.com"}]
 classifiers = []
 dependencies = [
-    "numpy>=1.26.2,<2",
+    "numpy>=1.26.2",
 ]
 description = "pyodbc extended to use NumPy"
 keywords = []
