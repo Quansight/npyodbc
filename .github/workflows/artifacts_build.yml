@@ -43,10 +43,21 @@ jobs:
 
   build_windows_x86_wheels:
     name: Build wheels on Windows x86_64
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4.3.0
+
+      # https://github.com/actions/runner-images/issues/9894#issuecomment-2120538177
+      # suggests we need to set up a c compiler on windows.
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: msvc
+          vcvarsall: true
+          cmake: true
+          ninja: true
+          vcpkg: true
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.1
@@ -67,6 +78,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4.3.0
+
+      # https://github.com/actions/runner-images/issues/9894#issuecomment-2120538177
+      # suggests we need to set up a c compiler on windows.
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: msvc
+          vcvarsall: true
+          cmake: true
+          ninja: true
+          vcpkg: true
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.1

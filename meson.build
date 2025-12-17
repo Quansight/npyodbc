@@ -2,6 +2,7 @@ project(
   'npyodbc',
   'cpp',
   version: run_command(['python', '-m', 'setuptools_scm'], check: true).stdout().strip(),
+  default_options: ['-cpp_std=c++17']
 )
 
 python = import('python').find_installation(pure: false)
