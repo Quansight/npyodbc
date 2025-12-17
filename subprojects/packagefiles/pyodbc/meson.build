@@ -76,8 +76,8 @@ pyodbc_dep = declare_dependency(
     python_dep,
   ] + deps,
   include_directories: [pyodbc_inc],
-  cpp_args: cflags,
-  link_args : lflags,
+  compile_args: cflags,
+  link_args: lflags,
 )
 
 meson.override_dependency('pyodbc', pyodbc_dep)
