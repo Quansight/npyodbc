@@ -14,7 +14,7 @@ compiler = meson.get_compiler('cpp')
 numpy_inc = include_directories(
   run_command(
     python,
-    ['-c', 'import os, numpy; print(os.path.relpath(numpy.get_include()))'],
+    ['-c', 'import numpy; print(numpy.get_include())'],
     check : true,
   ).stdout().strip()
 )
