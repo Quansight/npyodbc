@@ -100,12 +100,10 @@ jobs:
   #         ninja: true
   #         vcpkg: true
   #
-  #     - name: Install icu, pkgconf
-  #       shell: bash
-  #       run: |
-  #         vcpkg install icu
-  #         choco install pkgconfiglite -y
-  #         echo "PKG_CONFIG_PATH=$VCPKG_ROOT/installed/arm64-windows/lib/pkgconfig" >> $GITHUB_ENV
+      # - name: Install icu, pkgconf
+      #   shell: bash
+      #   run: |
+      #     vcpkg install icu pkgconf
   #
   #     - name: Build wheels
   #       uses: pypa/cibuildwheel@v3.2.1
