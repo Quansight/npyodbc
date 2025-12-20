@@ -34,8 +34,6 @@ npyodbc_sources = [
 add_project_arguments(
   [
     '-DPYODBC_VERSION=' + meson.project_version(),
-    '-Wno-write-strings',
-    '-Wno-deprecated-declarations',
   ],
   language: 'cpp'
 )
@@ -64,6 +62,13 @@ if host_machine.system() == 'windows'
     compiler.find_library('advapi32', required: true),
   ]
 else # Unix
+  add_project_arguments(
+    [
+      '-Wno-write-strings',
+      '-Wno-deprecated-declarations',
+    ],
+    language: 'cpp'
+  )
 
   # First try to detect odbc via meson
   odbc_dep = compiler.find_library('odbc', required: false)
