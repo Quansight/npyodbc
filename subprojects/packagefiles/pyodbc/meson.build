@@ -54,10 +54,10 @@ if host_machine.system() == 'windows'
 else # Unix
 
   # First try to detect odbc via meson
-  odbc_dep = compiler.find_library('odbc', required: false)
-  if odbc_dep.found()
+  odbc = compiler.find_library('odbc', required: false)
+  if odbc.found()
     # If we can find odbc via meson, no other action is needed
-    deps += [odbc_dep]
+    deps += [odbc]
 
   else
     # Otherwise, we try to use odbc_config
@@ -71,6 +71,12 @@ else # Unix
   endif
 endif
 
+odbc_dep = declare_dependency(
+  dependencies: deps,
+  compile_args: cflags,
+  link_args: lflags,
+)
+
 pyodbc_dep = declare_dependency(
   sources: pyodbc_sources,
   dependencies: [
@@ -82,3 +88,4 @@ pyodbc_dep = declare_dependency(
 )
 
 meson.override_dependency('pyodbc', pyodbc_dep)
+meson.override_dependency('odbc', odbc_dep)
