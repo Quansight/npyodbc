@@ -1718,7 +1718,7 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
         !PyArg_ParseTupleAndKeywords(
             args,
             kwargs,
-            "|npsO",
+            "|nsO",
             const_cast<char **>(Cursor_npfetch_kwnames),
             &nrows,
             &null_suffix,
@@ -1741,7 +1741,7 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
 }
 
 char fetchdictarray_doc[] =
-        "fetchdictarray(size=-1, null_suffix='_isnull', target_dtypes=None)\n"
+        "fetchdictarray(size=-1, null_suffix=None, target_dtypes=None)\n"
         "                               --> a dictionary of column arrays.\n"
         "\n"
         "Fetch as many rows as specified by size into a dictionary of NumPy\n"
@@ -1755,14 +1755,14 @@ char fetchdictarray_doc[] =
         "size : Optional[int]\n"
         "    The number of rows to fetch. Use -1 (the default) to fetch all\n"
         "    remaining rows.\n"
-        "target_dtypes : Optional[dict]\n"
-        "    If provided, this mapping between {column name: dtype} coerces \n"
-        "    the values read from the database into arrays of the requested\n"
-        "    dtypes.\n"
         "null_suffix : Optional[str]\n"
         "    If specified, a new boolean column named `<column_name><null_suffix>` will be\n"
         "    included in the output, with values indicating which values in `<column_name>` were\n"
         "    null in the original array. If None, no such column will be included.\n"
+        "target_dtypes : Optional[dict]\n"
+        "    If provided, this mapping between {column name: dtype} coerces \n"
+        "    the values read from the database into arrays of the requested\n"
+        "    dtypes.\n"
         "\n"
         "Returns\n"
         "-------\n"
