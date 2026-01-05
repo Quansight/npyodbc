@@ -1672,7 +1672,8 @@ query_desc_to_dictarray(query_desc &qd, const char *null_suffix)
  * @return A Python dictionary filled with numpy arrays
  */
 static PyObject *
-create_fill_dictarray(Cursor *cursor, npy_intp nrows, const char *null_suffix, PyObject *target_dtypes)
+create_fill_dictarray(Cursor *cursor, npy_intp nrows, const char *null_suffix,
+                      PyObject *target_dtypes)
 {
     query_desc qd;
     if (perform_array_query(qd, cursor, nrows, lowercase(), null_suffix != 0, target_dtypes) != 0) {
@@ -1683,8 +1684,6 @@ create_fill_dictarray(Cursor *cursor, npy_intp nrows, const char *null_suffix, P
 
 static const char *Cursor_npfetch_kwnames[] = {
     "size",          // keyword to read the maximum number of rows. Defaults to all.
-    "return_nulls",  // keyword to make a given fetch to add boolean columns for
-                     // nulls
     "null_suffix",   // keyword providing the string to use as suffix
     "target_dtypes", // dict of numpy dtypes to use for each column
     NULL
@@ -1712,18 +1711,16 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
     }
 
     Py_ssize_t nrows = -1;
-    bool return_nulls = false;
-    const char *null_suffix = "_isnull";
+    const char *null_suffix = NULL;
     PyObject *target_dtypes = NULL;
 
     if (
         !PyArg_ParseTupleAndKeywords(
             args,
             kwargs,
-            "|npsO",
+            "|nsO",
             const_cast<char **>(Cursor_npfetch_kwnames),
             &nrows,
-            &return_nulls,
             &null_suffix,
             &target_dtypes
         )
@@ -1738,13 +1735,13 @@ Cursor_fetchdictarray(PyObject *self, PyObject *args, PyObject *kwargs)
         CAN_USE_DATETIME = true;
     }
 
-    PyObject *dictarr = create_fill_dictarray(cursor, nrows, return_nulls ? null_suffix : 0, target_dtypes);
+    PyObject *dictarr = create_fill_dictarray(cursor, nrows, null_suffix, target_dtypes);
     Py_DECREF(numpy);
     return dictarr;
 }
 
 char fetchdictarray_doc[] =
-        "fetchdictarray(size=-1, return_nulls=False, null_suffix='_isnull', target_dtypes=None)\n"
+        "fetchdictarray(size=-1, null_suffix=None, target_dtypes=None)\n"
         "                               --> a dictionary of column arrays.\n"
         "\n"
         "Fetch as many rows as specified by size into a dictionary of NumPy\n"
@@ -1755,24 +1752,21 @@ char fetchdictarray_doc[] =
         "\n"
         "Parameters\n"
         "----------\n"
-        "size : int, optional\n"
+        "size : Optional[int]\n"
         "    The number of rows to fetch. Use -1 (the default) to fetch all\n"
         "    remaining rows.\n"
-        "return_nulls : boolean, optional\n"
-        "    If True, information about null values will be included adding a\n"
-        "    boolean array using as key a string  built by concatenating the\n"
-        "    column name and null_suffix.\n"
-        "target_dtypes : dict, optional\n"
+        "null_suffix : Optional[str]\n"
+        "    If specified, a new boolean column named `<column_name><null_suffix>` will be\n"
+        "    included in the output, with values indicating which values in `<column_name>` were\n"
+        "    null in the original array. If None, no such column will be included.\n"
+        "target_dtypes : Optional[dict]\n"
         "    If provided, this mapping between {column name: dtype} coerces \n"
         "    the values read from the database into arrays of the requested\n"
         "    dtypes.\n"
-        "null_suffix : string, optional\n"
-        "    A string used as a suffix when building the key for null values.\n"
-        "    Only used if return_nulls is True.\n"
         "\n"
         "Returns\n"
         "-------\n"
-        "out: dict\n"
+        "dict\n"
         "    A dictionary mapping column names to an ndarray holding its values\n"
         "    for the fetched rows. The dictionary will use the column name as\n"
         "    key for the ndarray containing values associated to that column.\n"
@@ -1780,7 +1774,7 @@ char fetchdictarray_doc[] =
         "    by adding additional boolean columns named after the nullable column\n"
         "    concatenated to null_suffix\n"
         "\n"
-        "Remarks\n"
+        "Notes\n"
         "-------\n"
         "Similar to fetchmany(size), but returning a dictionary of NumPy ndarrays\n"
         "for the results instead of a Python list of tuples of objects, reducing\n"
