@@ -50,6 +50,12 @@ deps = []
 cflags = []
 lflags = []
 
+python.install_sources(
+  [
+    'npyodbc/__init__.py',
+  ],
+  subdir: 'npyodbc',
+)
 
 # Build the npyodbc module
 python.extension_module(
