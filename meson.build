@@ -53,6 +53,8 @@ lflags = []
 python.install_sources(
   [
     'npyodbc/__init__.py',
+    'npyodbc/__init__.pyi',
+    'npyodbc/_npyodbc.pyi',
   ],
   subdir: 'npyodbc',
 )
