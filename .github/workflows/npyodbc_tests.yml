@@ -27,7 +27,7 @@ jobs:
 
       - name: Install npyodbc
         run: |
-          pip install '.[test]'
+          pip install -ve '.[test]' --no-build-isolation
 
       - name: Run Numpy tests against compilation version
         run: |
