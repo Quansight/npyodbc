@@ -13,8 +13,8 @@
      PyObject* o = PyObject_GetAttrString(pModule, "native_uuid");
      // If this fails for some reason, we'll assume false and allow the exception to pop up later.
      bool b = o && PyObject_IsTrue(o);
-+    printf("o exists: %s", o ? "true" : "false");
-+    printf("o is a python True: %s", PyObject_IsTrue(o) ? "true" : "false");
++    printf("o exists: %s\n", o ? "true" : "false");
++    printf("o is a python True: %s\n", PyObject_IsTrue(o) ? "true" : "false");
      Py_XDECREF(o);
      return b;
  }
