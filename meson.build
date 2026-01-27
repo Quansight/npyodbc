@@ -32,6 +32,13 @@ npyodbc_sources = [
   'src/npyodbcmodule.cpp'
 ]
 
+python.install_sources(
+  [
+    'npyodbc/__init__.py',
+  ],
+  subdir: 'npyodbc',
+)
+
 add_project_arguments(
   [
     '-DPYODBC_VERSION=' + meson.project_version(),
@@ -58,4 +65,5 @@ python.extension_module(
   install : true,
   cpp_args : cflags,
   link_args : lflags,
+  subdir: 'npyodbc',
 )
