@@ -14,9 +14,7 @@
 PyMODINIT_FUNC
 PyInit__npyodbc(void)
 {
-    // Initialize the pyodbc module,
     PyObject *mod = initialize_pyodbc();
-
     if (mod == NULL) {
         PyErr_SetString(PyExc_ImportError, "Error initializing pyodbc.");
         return NULL;
