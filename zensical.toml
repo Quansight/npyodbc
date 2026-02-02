@@ -305,7 +305,10 @@ toggle.name = "Switch to light mode"
 link = "https://github.com/quansight/npyodbc"
 
 [project.plugins.mkdocstrings.handlers.python]
-inventories = ["https://docs.python.org/3/objects.inv"]
+inventories = [
+    "https://docs.python.org/3/objects.inv",
+    "http://docs.scipy.org/doc/numpy/objects.inv",
+]
 load_external_modules = true
 
 [project.plugins.mkdocstrings.handlers.python.options]

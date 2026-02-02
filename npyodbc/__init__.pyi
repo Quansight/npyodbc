@@ -3,6 +3,8 @@ from numpy.typing import DTypeLike, NDArray
 from ._npyodbc import *  # noqa: F403
 
 class Cursor:
+    """An ODBC cursor for querying a database."""
+
     def fetchdictarray(
         self,
         size: int = -1,
@@ -50,6 +52,6 @@ class Cursor:
 
         See Also
         --------
-        fetchmany : Fetch rows into a Python list of rows.
-        fetchall : Fetch the remaining rows into a Python list of rows.
+        - [fetchmany](https://github.com/mkleehammer/pyodbc/wiki/Cursor#fetchmanysizecursorarraysize) : Fetch rows into a Python list of rows.
+        - [fetchall](https://github.com/mkleehammer/pyodbc/wiki/Cursor#fetchall) : Fetch the remaining rows into a Python list of rows.
         """
