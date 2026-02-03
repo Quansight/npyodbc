@@ -83,13 +83,18 @@ ignore = [
 ]
 
 [tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = [
+    "F401",
+    "F403", # Re-exporting using star imports is totally fine
+]
 "test_*.py" = ["ANN001"]
 
 [project.optional-dependencies]
 dev = [
-    "pre-commit",
-    "meson-python"
+    "prek",
+    "meson-python",
+    "zensical",
+    "mkdocstrings-python",
 ]
 test = ["pytest", "hypothesis"]
 
