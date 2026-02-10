@@ -816,6 +816,14 @@ map_column_desc_types(column_desc &cd, bool unicode)
         case SQL_WCHAR:
         case SQL_WVARCHAR:
         case SQL_WLONGVARCHAR: {
+            if (!unicode) {
+                PyErr_SetString(
+                    PyExc_ValueError,
+                    "The SQL column type is a wide character, but a unicode numpy array was not "
+                    "explicitly requested. Aborting."
+                );
+                return 1;
+            }
             dtype = unicode_dtype(limit_text_size(sql_size));
             if (dtype) {
                 cd.element_buffer_size_ = PyDataType_ELSIZE(dtype);
