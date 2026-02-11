@@ -3,11 +3,12 @@ import warnings
 from typing import Optional
 
 import hypothesis.strategies as st
-import npyodbc
 import numpy as np
 import pytest
 from hypothesis import given, reject, settings
 from numpy.testing import assert_allclose, assert_array_equal
+
+import npyodbc
 
 
 @pytest.fixture(scope="module")
@@ -347,5 +348,29 @@ def test_fetchdictarray_coercion(cursor, int_dtype, float_dtype, values):
     assert_result_close(
         np.array(rounded), inserted['b'], dtype=float_dtype
     )
+
+    cleanup(cursor)
+
+
+def test_null_floats(cursor):
+    """Test that writing null values into a float column are NaN when retrieved."""
+    cursor.execute("CREATE TABLE t (f FLOAT NULL);")
+    cursor.execute("INSERT INTO t VALUES (123.12345678), (NULL);")
+    res = cursor.execute("SELECT * FROM t;").fetchdictarray(null_suffix="_isnull")
+
+    assert_array_equal(res['f'], [123.12345678, np.nan])
+    assert_array_equal(res['f_isnull'], [False, True])
+
+    cleanup(cursor)
+
+
+def test_null_strings(cursor):
+    """Test that null values in a text column are empty strings when retrieved."""
+    cursor.execute("CREATE TABLE t (f TEXT NULL);")
+    cursor.execute("INSERT INTO t VALUES ('foo'), (NULL);")
+    res = cursor.execute("SELECT * FROM t;").fetchdictarray(null_suffix="_isnull")
+
+    assert_array_equal(res['f'], ['foo', ''])
+    assert_array_equal(res['f_isnull'], [False, True])
 
     cleanup(cursor)
