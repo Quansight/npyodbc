@@ -728,8 +728,15 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
     Py_INCREF(descr);
 
     switch (descr->type_num) {
+        // Since we modify the elsize for string and unicode types, we need to create an entirely
+        // new descr (to be sure we aren't modifying the global numpy unicode/bytestring descr
+        // singletons)
         case NPY_STRING:
             cd.sql_c_type_ = SQL_C_BINARY;
+            cd.npy_type_descr_ = PyArray_DescrNew(descr);
+            Py_INCREF(cd.npy_type_descr_);
+            Py_DECREF(descr);
+
             PyDataType_SET_ELSIZE(
                 descr,
                 static_cast<npy_int>(cd.sql_size_)
@@ -738,6 +745,10 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
             break;
         case NPY_UNICODE:
             cd.sql_c_type_ = SQL_C_WCHAR;
+            cd.npy_type_descr_ = PyArray_DescrNew(descr);
+            Py_INCREF(cd.npy_type_descr_);
+            Py_DECREF(descr);
+
             PyDataType_SET_ELSIZE(
                 descr,
                 static_cast<npy_int>(cd.sql_size_)
@@ -945,7 +956,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
         case SQL_BINARY:
         case SQL_VARBINARY:
         case SQL_LONGVARBINARY:
-            dtype = PyArray_DescrFromType(NPY_STRING);
+            dtype = PyArray_DescrNewFromType(NPY_STRING);
             if (dtype != NULL) {
                 // Set the element size for numpy
                 PyDataType_SET_ELSIZE(
