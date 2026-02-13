@@ -19,7 +19,7 @@ def connection() -> npyodbc.Connection:
 
 @pytest.fixture(scope="module")
 def cursor(connection) -> npyodbc.Cursor:
-    """Return a cursor for a SQLite3 database."""
+    """Return a new cursor for a SQLite3 database."""
     return connection.cursor()
 
 
@@ -34,10 +34,12 @@ def cleanup(cursor: npyodbc.Cursor):
     cursor : npyodbc.Cursor
         Cursor for the database to clean up
     """
-    for table in cursor.execute('SELECT tbl_name FROM sqlite_schema;').fetchall():
+    for table in cursor.execute(
+        "SELECT tbl_name FROM sqlite_schema UNION ALL "
+        "SELECT tbl_name FROM sqlite_temp_schema;"
+    ).fetchall():
         cursor.execute(f'DROP TABLE {table[0]};')
     assert len(cursor.execute('SELECT tbl_name FROM sqlite_schema;').fetchall()) == 0
-
 
 def assert_result_close(a: np.ndarray, b: np.ndarray, dtype: Optional[np.dtype] = None):
     """Assert that a is close to b.
@@ -373,4 +375,42 @@ def test_null_strings(cursor):
     assert_array_equal(res['f'], ['foo', ''])
     assert_array_equal(res['f_isnull'], [False, True])
 
+    cleanup(cursor)
+
+
+@pytest.mark.parametrize(
+    "dtype", [
+        "<S256",
+        "<U256"
+    ]
+)
+def test_string_dtype_itemsize_corruption(cursor, dtype):
+    """Test that the string and unicode dtype singletons don't get modified by npyodbc.
+
+    This happens if the PyArray_Descr for the string or unicode dtype has its itemsize
+    modified; all modifications should happen on _copies_ of that singleton dtype, i.e.
+    we should be calling
+
+        PyArray_DescrNewFromType(NPY_STRING) // <-- Returns a copy of the singleton
+
+    rather than
+
+        PyArray_DescrFromType(NPY_STRING) // <-- Returns the singleton string dtype
+    """
+    cursor.execute("""
+        create temp table binary_type(
+            binary_type_n BLOB,
+            binary_type   BLOB NOT NULL
+        )
+    """)
+
+    cursor.execute("insert into binary_type values (1, 2)")
+    cursor.execute("insert into binary_type values (NULL, 5)")
+    cursor.execute("select * from binary_type")
+
+    itemsize_before = np.array(["abcdef"], dtype=dtype).itemsize
+    _ = cursor.fetchdictarray()
+    itemsize_after = np.array(["abcdef"], dtype=dtype).itemsize
+
+    assert itemsize_before == itemsize_after
     cleanup(cursor)
