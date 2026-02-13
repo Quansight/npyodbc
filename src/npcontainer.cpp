@@ -1127,6 +1127,13 @@ query_desc::translate_types(bool use_unicode, PyObject *target_dtypes, int &unsu
             } else {
                 int conversion_result = PyArray_DescrConverter(target_dtype, &descr);
 
+                // If the requested dtype is fixed-length string or unicode, we need to return a
+                // copy; PyArray_DescrConverter returns the singleton, so we copy it here
+                if (descr->type_num == NPY_STRING || descr->type_num == NPY_UNICODE) {
+                    Py_DECREF(descr);
+                    descr = PyArray_DescrNew(descr);
+                }
+
                 // Sometimes PyArray_DescrConverter returns < 0 to indicate errors, other
                 // times it doesn't but descr == NULL. In either case, we need to do error handling.
                 if (conversion_result < 0 || descr == NULL) {
