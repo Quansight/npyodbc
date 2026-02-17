@@ -329,7 +329,7 @@ fill_NAvalue(void *value, PyArray_Descr *dtype)
 {
     switch (dtype->type_num) {
         case NPY_BOOL:
-            ((npy_bool *)value)[0] = 0;  // XXX False is a good default?
+            ((npy_bool *)value)[0] = 0;  // Make this False to match `bool(None)` in Python
             break;
         case NPY_BYTE:
             ((npy_byte *)value)[0] = NPY_MAX_BYTE;
@@ -368,10 +368,10 @@ fill_NAvalue(void *value, PyArray_Descr *dtype)
             ((npy_float *)value)[0] = NPY_NANF;
             break;
         case NPY_DOUBLE:
-            ((npy_float *)value)[0] = NPY_NAN;
+            ((npy_double *)value)[0] = NPY_NAN;
             break;
         case NPY_LONGDOUBLE:
-            ((npy_float *)value)[0] = NPY_NANL;
+            ((npy_longdouble *)value)[0] = NPY_NANL;
             break;
         case NPY_CFLOAT:
             ((npy_cfloat *)value)[0] = {NPY_NANF, NPY_NANF};
