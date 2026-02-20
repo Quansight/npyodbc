@@ -728,21 +728,30 @@ int coerce_column_desc_types(column_desc &cd, bool unicode, PyArray_Descr *descr
     Py_INCREF(descr);
 
     switch (descr->type_num) {
+        // Since we modify the elsize for string and unicode types, we need to create an entirely
+        // new descr (to be sure we aren't modifying the global numpy unicode/bytestring descr
+        // singletons)
         case NPY_STRING:
             cd.sql_c_type_ = SQL_C_BINARY;
+            cd.npy_type_descr_ = PyArray_DescrNew(descr);
+            Py_DECREF(descr);
+
             PyDataType_SET_ELSIZE(
-                descr,
+                cd.npy_type_descr_,
                 static_cast<npy_int>(cd.sql_size_)
             );
-            cd.element_buffer_size_ = PyDataType_ELSIZE(descr);
+            cd.element_buffer_size_ = PyDataType_ELSIZE(cd.npy_type_descr_);
             break;
         case NPY_UNICODE:
             cd.sql_c_type_ = SQL_C_WCHAR;
+            cd.npy_type_descr_ = PyArray_DescrNew(descr);
+            Py_DECREF(descr);
+
             PyDataType_SET_ELSIZE(
-                descr,
+                cd.npy_type_descr_,
                 static_cast<npy_int>(cd.sql_size_)
             );
-            cd.element_buffer_size_ = PyDataType_ELSIZE(descr);
+            cd.element_buffer_size_ = PyDataType_ELSIZE(cd.npy_type_descr_);
             break;
         case NPY_INT8:
             cd.sql_c_type_ = SQL_C_STINYINT;
@@ -953,7 +962,7 @@ map_column_desc_types(column_desc &cd, bool unicode)
         case SQL_BINARY:
         case SQL_VARBINARY:
         case SQL_LONGVARBINARY:
-            dtype = PyArray_DescrFromType(NPY_STRING);
+            dtype = PyArray_DescrNewFromType(NPY_STRING);
             if (dtype != NULL) {
                 // Set the element size for numpy
                 PyDataType_SET_ELSIZE(
@@ -1163,6 +1172,7 @@ query_desc::translate_types(bool use_unicode, PyObject *target_dtypes, int &unsu
                     Py_XDECREF(descr);
                     return -1;
                 }
+
                 // coerce_column_desc_types takes ownership of descr; no Py_DECREF needed
                 unsupported_fields += coerce_column_desc_types(column, use_unicode, descr);
             }

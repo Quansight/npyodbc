@@ -69,8 +69,9 @@ jobs:
         echo "*** cat /etc/odbc.ini"
         cat /etc/odbc.ini
 
-    - name: Install libicu dependency
+    - name: Update apt and install libicu dependency
       run: |
+        sudo apt update
         sudo apt install -y libicu-dev
 
     - name: Install ODBC driver for SQL Server
